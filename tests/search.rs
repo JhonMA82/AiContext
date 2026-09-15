@@ -175,3 +175,61 @@ fn literal_search_prefers_verified_tgrep_backend() {
         "tgrep must find index.js, got {hits:?}"
     );
 }
+
+fn codegraph_present() -> bool {
+    Command::new("codegraph")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+fn codegraph_init(dir: &Path) -> bool {
+    Command::new("codegraph")
+        .args(["init", "."])
+        .current_dir(dir)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[test]
+fn impact_uses_codegraph_when_indexed() {
+    if codegraph_present() == false {
+        return;
+    }
+    let dir = fixture_repo("rust-single");
+    if codegraph_init(&dir) == false {
+        return;
+    }
+    let (c, out) = run(&dir, ["search", "main", "--impact", "--json"]);
+    assert_eq!(c, 0, "impact must succeed: {out}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["mode"], "impact");
+    assert_eq!(v["backend"], "codegraph");
+    let hits = v.get("hits").and_then(|x| x.as_array()).unwrap();
+    assert!(
+        hits.iter()
+            .any(|h| h["path"].as_str().unwrap().contains("main.rs")),
+        "impact must relate main.rs, got {hits:?}"
+    );
+}
+
+#[test]
+fn impact_without_index_degrades_with_guidance() {
+    let dir = fixture_repo("rust-single");
+    // No codegraph init here on purpose.
+    let (c, out) = run(&dir, ["search", "main", "--impact", "--json"]);
+    assert_eq!(c, 0);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["mode"], "impact");
+    let note = v.get("note").and_then(|x| x.as_str()).unwrap();
+    if codegraph_present() {
+        assert!(
+            note.contains("codegraph init"),
+            "note must guide to init: {v:?}"
+        );
+    } else {
+        assert!(note.contains("degraded"), "note must admit degrade: {v:?}");
+    }
+}

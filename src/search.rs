@@ -196,6 +196,60 @@ fn structural_search(root: &Path, pattern: &str) -> Result<Vec<TextHit>> {
     Ok(hits)
 }
 
+/// Result of a CodeGraph impact query.
+enum Impact {
+    /// Graph query ran; hits may be empty when the symbol has no relations.
+    Graph(Vec<TextHit>),
+    /// Binary present but the query failed (usually: index not built yet).
+    NoIndex,
+    /// Binary absent; the caller degrades to text search.
+    NoBinary,
+}
+
+/// Run `codegraph impact <symbol> --json` (verified against 1.5.0).
+/// Read-only: never builds an index; a missing index reports NoIndex.
+fn codegraph_impact(root: &Path, symbol: &str) -> Impact {
+    if crate::tools::detect_tool("codegraph").available {
+        let out = Command::new("codegraph")
+            .args(["impact", symbol, "--json"])
+            .current_dir(root)
+            .output();
+        match out {
+            Ok(o) if o.status.success() => {
+                let mut hits = Vec::new();
+                let parsed: Option<serde_json::Value> =
+                    serde_json::from_str(&String::from_utf8_lossy(&o.stdout)).ok();
+                if let Some(v) = parsed {
+                    if let Some(arr) = v.get("affected").and_then(|a| a.as_array()) {
+                        for item in arr {
+                            if hits.len() >= MAX_HITS {
+                                break;
+                            }
+                            let path = item.get("filePath").and_then(|x| x.as_str()).unwrap_or("?");
+                            let line = item
+                                .get("startLine")
+                                .and_then(|x| x.as_u64())
+                                .unwrap_or(1)
+                                .max(1);
+                            let name = item.get("name").and_then(|x| x.as_str()).unwrap_or("");
+                            let kind = item.get("kind").and_then(|x| x.as_str()).unwrap_or("");
+                            hits.push(TextHit {
+                                path: path.to_string(),
+                                line,
+                                text: truncate(&format!("{name} ({kind})")),
+                            });
+                        }
+                    }
+                }
+                Impact::Graph(hits)
+            }
+            _ => Impact::NoIndex,
+        }
+    } else {
+        Impact::NoBinary
+    }
+}
+
 pub fn cmd_search(
     query: String,
     text_only: bool,
@@ -214,41 +268,39 @@ pub fn cmd_search(
     let _ = text_only;
 
     let knowledge = knowledge_search(&root, &query);
-    let (backend, mut hits, note) = match mode {
+    let (backend, hits, note) = match mode {
         "structure" => (
             "ast-grep".to_string(),
             structural_search(&root, &query)?,
             None,
         ),
-        "impact" => {
-            if crate::tools::detect_tool("codegraph").available {
+        "impact" => match codegraph_impact(&root, &query) {
+            Impact::Graph(hits) => ("codegraph".to_string(), hits, None),
+            Impact::NoIndex => {
+                let (backend, hits) = literal_search(&root, &query);
                 (
-                    "codegraph".to_string(),
-                    Vec::new(),
+                    backend,
+                    hits,
                     Some(
-                        "codegraph relations are not wired in P0; showing text results".to_string(),
+                        "codegraph index missing — run `codegraph init` for graph results"
+                            .to_string(),
                     ),
                 )
-            } else {
-                let (b, h) = literal_search(&root, &query);
+            }
+            Impact::NoBinary => {
+                let (backend, hits) = literal_search(&root, &query);
                 (
-                    b,
-                    h,
+                    backend,
+                    hits,
                     Some("graph unavailable — degraded to text results".to_string()),
                 )
             }
-        }
+        },
         _ => {
             let (b, h) = literal_search(&root, &query);
             (b, h, None)
         }
     };
-    // Impact with codegraph present still benefits from text hits in P0.
-    if mode == "impact" && crate::tools::detect_tool("codegraph").available {
-        let (_, h) = literal_search(&root, &query);
-        hits = h;
-    }
-
     if json {
         #[derive(Serialize)]
         struct SearchOut<'a> {
