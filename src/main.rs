@@ -52,5 +52,15 @@ fn run(cli: Cli) -> Result<i32> {
             AgentCommand::Install { agent, json } => agent::cmd_install(agent, json),
             AgentCommand::Uninstall { agent, json } => agent::cmd_uninstall(agent, json),
         },
+        Command::Completion { shell } => {
+            use clap::CommandFactory;
+            clap_complete::generate(
+                shell,
+                &mut Cli::command(),
+                "aicontext",
+                &mut std::io::stdout(),
+            );
+            Ok(0)
+        }
     }
 }

@@ -75,6 +75,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: AgentCommand,
     },
+    /// Print shell completions (stdout; wire into your shell init)
+    Completion {
+        /// Shell to generate completions for
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(Subcommand, Debug)]
