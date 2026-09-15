@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aicontext/tools-status/v1",
+  "title": "AIContext tools status v1",
+  "type": "object",
+  "required": ["schema", "tools"],
+  "properties": {
+    "schema": { "const": "aicontext/tools-status/v1" },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "available", "managed_by"],
+        "properties": {
+          "name": { "type": "string" },
+          "available": { "type": "boolean" },
+          "version": { "type": ["string", "null"] },
+          "managed_by": { "type": "string" }
+        }
+      }
+    }
+  }
+}

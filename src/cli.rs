@@ -44,4 +44,23 @@ pub enum Command {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// External tool detection and recommendations (read-only)
+    Tools {
+        #[command(subcommand)]
+        cmd: ToolsCommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ToolsCommand {
+    /// Detect useful tooling and explain why (never installs)
+    Plan {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Show availability, versions and ownership of known tools
+    Status {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }

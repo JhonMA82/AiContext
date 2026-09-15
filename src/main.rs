@@ -8,7 +8,7 @@ mod tools;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{Cli, Command};
+use cli::{Cli, Command, ToolsCommand};
 
 fn main() {
     let cli = Cli::parse();
@@ -33,5 +33,9 @@ fn run(cli: Cli) -> Result<i32> {
         Command::Sync { check, json } => state::cmd_sync(check, json),
         Command::Status { json } => state::cmd_status(json),
         Command::Check { json } => check::cmd_check(json),
+        Command::Tools { cmd } => match cmd {
+            ToolsCommand::Plan { json } => tools::cmd_plan(json),
+            ToolsCommand::Status { json } => tools::cmd_status(json),
+        },
     }
 }

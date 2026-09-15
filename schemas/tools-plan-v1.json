@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aicontext/tools-plan/v1",
+  "title": "AIContext tools plan v1",
+  "type": "object",
+  "required": ["schema", "sections"],
+  "properties": {
+    "schema": { "const": "aicontext/tools-plan/v1" },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "entries"],
+        "properties": {
+          "title": { "type": "string" },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["tool", "level", "state", "reason"],
+              "properties": {
+                "tool": { "type": "string" },
+                "level": { "type": "string" },
+                "state": { "enum": ["available", "missing", "disabled"] },
+                "reason": { "type": "string" },
+                "version": { "type": ["string", "null"] },
+                "install": { "type": ["string", "null"] }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
