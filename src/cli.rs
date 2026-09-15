@@ -70,6 +70,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: ToolsCommand,
     },
+    /// Install or remove agent skills managed by AIContext
+    Agent {
+        #[command(subcommand)]
+        cmd: AgentCommand,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -81,6 +86,24 @@ pub enum ToolsCommand {
     },
     /// Show availability, versions and ownership of known tools
     Status {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AgentCommand {
+    /// Install the aicontext-adopt skill plus the minimal AGENTS.md pointer
+    Install {
+        /// Target agent (v0.1: pi)
+        agent: String,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Remove only files owned by AIContext (never foreign files)
+    Uninstall {
+        /// Target agent (v0.1: pi)
+        agent: String,
         #[arg(long, default_value_t = false)]
         json: bool,
     },

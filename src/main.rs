@@ -1,16 +1,17 @@
+mod agent;
 mod check;
 mod cli;
 mod config;
 mod doctor;
-mod search;
 mod output;
 mod scan;
+mod search;
 mod state;
 mod tools;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{Cli, Command, ToolsCommand};
+use cli::{AgentCommand, Cli, Command, ToolsCommand};
 
 fn main() {
     let cli = Cli::parse();
@@ -34,18 +35,22 @@ fn run(cli: Cli) -> Result<i32> {
         Command::Scan { json } => scan::cmd_scan(json),
         Command::Sync { check, json } => state::cmd_sync(check, json),
         Command::Status { json } => state::cmd_status(json),
-            Command::Check { json } => check::cmd_check(json),
-            Command::Doctor { json } => doctor::cmd_doctor(json),
-            Command::Search {
-                query,
-                text,
-                structure,
-                impact,
-                json,
-            } => search::cmd_search(query, text, structure, impact, json),
+        Command::Check { json } => check::cmd_check(json),
+        Command::Doctor { json } => doctor::cmd_doctor(json),
+        Command::Search {
+            query,
+            text,
+            structure,
+            impact,
+            json,
+        } => search::cmd_search(query, text, structure, impact, json),
         Command::Tools { cmd } => match cmd {
             ToolsCommand::Plan { json } => tools::cmd_plan(json),
             ToolsCommand::Status { json } => tools::cmd_status(json),
+        },
+        Command::Agent { cmd } => match cmd {
+            AgentCommand::Install { agent, json } => agent::cmd_install(agent, json),
+            AgentCommand::Uninstall { agent, json } => agent::cmd_uninstall(agent, json),
         },
     }
 }

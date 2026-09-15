@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aicontext/agent/v1",
+  "title": "AIContext agent install/uninstall result v1",
+  "type": "object",
+  "required": ["schema", "action", "agent"],
+  "properties": {
+    "schema": { "const": "aicontext/agent/v1" },
+    "action": { "enum": ["install", "uninstall"] },
+    "agent": { "type": "string" },
+    "path": { "type": "string" },
+    "changed": { "type": "boolean" },
+    "removed": { "type": "array", "items": { "type": "string" } },
+    "note": { "type": "string" },
+    "agents_pointer": { "type": "string" }
+  }
+}
