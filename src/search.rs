@@ -36,8 +36,7 @@ fn parse_grep_lines(output: &str) -> Vec<TextHit> {
             break;
         }
         let mut parts = line.splitn(3, ':');
-        let (Some(path), Some(num), Some(text)) = (parts.next(), parts.next(), parts.next())
-        else {
+        let (Some(path), Some(num), Some(text)) = (parts.next(), parts.next(), parts.next()) else {
             continue;
         };
         let Ok(line) = num.trim().parse::<u64>() else {
@@ -98,18 +97,12 @@ fn literal_search(root: &Path, query: &str) -> (String, Vec<TextHit>) {
             return ("rg".to_string(), hits);
         }
     }
-    let args = [
-        "grep", "-n", "-I", "--no-color", "-e", query, "--", ".",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect::<Vec<_>>();
+    let args = ["grep", "-n", "-I", "--no-color", "-e", query, "--", "."]
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
     // git grep runs from anywhere inside the repo; anchor at root.
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(&args)
-        .output();
+    let out = Command::new("git").arg("-C").arg(root).args(&args).output();
     match out {
         Ok(o) if o.status.success() || o.status.code() == Some(1) => (
             "git grep".to_string(),
@@ -122,10 +115,7 @@ fn literal_search(root: &Path, query: &str) -> (String, Vec<TextHit>) {
 /// Level 1 of progressive disclosure: search persisted knowledge first.
 fn knowledge_search(root: &Path, query: &str) -> Vec<KnowledgeHit> {
     let mut hits = Vec::new();
-    let files = [
-        ".engineering/PROJECT_STATE.md",
-        ".engineering/PATTERNS.md",
-    ];
+    let files = [".engineering/PROJECT_STATE.md", ".engineering/PATTERNS.md"];
     let needle = query.to_lowercase();
     for rel in files {
         let Ok(text) = std::fs::read_to_string(root.join(rel)) else {
@@ -220,15 +210,18 @@ pub fn cmd_search(
 
     let knowledge = knowledge_search(&root, &query);
     let (backend, mut hits, note) = match mode {
-        "structure" => ("ast-grep".to_string(), structural_search(&root, &query)?, None),
+        "structure" => (
+            "ast-grep".to_string(),
+            structural_search(&root, &query)?,
+            None,
+        ),
         "impact" => {
             if crate::tools::detect_tool("codegraph").available {
                 (
                     "codegraph".to_string(),
                     Vec::new(),
                     Some(
-                        "codegraph relations are not wired in P0; showing text results"
-                            .to_string(),
+                        "codegraph relations are not wired in P0; showing text results".to_string(),
                     ),
                 )
             } else {

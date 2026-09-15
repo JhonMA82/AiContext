@@ -81,7 +81,8 @@ fn literal_search_json_contract() {
     assert_eq!(v["mode"], "text");
     let hits = v["hits"].as_array().unwrap();
     assert!(
-        hits.iter().any(|h| h["path"].as_str().unwrap().contains("index.js")),
+        hits.iter()
+            .any(|h| h["path"].as_str().unwrap().contains("index.js")),
         "must find the fixture content, got {hits:?}"
     );
 }
@@ -130,7 +131,8 @@ fn structural_search_uses_ast_grep() {
     assert_eq!(v["backend"], "ast-grep");
     let hits = v["hits"].as_array().unwrap();
     assert!(
-        hits.iter().any(|h| h["path"].as_str().unwrap().contains("index.js")),
+        hits.iter()
+            .any(|h| h["path"].as_str().unwrap().contains("index.js")),
         "ast-grep must match index.js, got {hits:?}"
     );
 }

@@ -69,10 +69,12 @@ fn broken_path_refs(root: &Path, patterns_path: &Path) -> Vec<String> {
             if let Some(rest) = t.strip_prefix("- ") {
                 let cand = rest.trim();
                 // Path-looking entries only: contain / or . and no spaces.
-                if (cand.contains('/') || cand.contains('.')) && !cand.contains(' ')
-                    && !root.join(cand).exists() {
-                        broken.push(cand.to_string());
-                    }
+                if (cand.contains('/') || cand.contains('.'))
+                    && !cand.contains(' ')
+                    && !root.join(cand).exists()
+                {
+                    broken.push(cand.to_string());
+                }
             } else if !t.starts_with('-') && t.ends_with(':') {
                 in_refs = false;
             }
@@ -105,15 +107,14 @@ pub fn run_doctor(root: &Path) -> Vec<Diagnostic> {
 
     let cfg = match crate::config::RepoConfig::load(root) {
         Ok(c) => {
-            out.push(ok("config", format!("{} (schema {})", REPO_MANIFEST, c.schema)));
+            out.push(ok(
+                "config",
+                format!("{} (schema {})", REPO_MANIFEST, c.schema),
+            ));
             Some(c)
         }
         Err(e) => {
-            out.push(fail(
-                "config",
-                format!("{e:#}"),
-                Some("aicontext init"),
-            ));
+            out.push(fail("config", format!("{e:#}"), Some("aicontext init")));
             None
         }
     };
@@ -151,7 +152,11 @@ pub fn run_doctor(root: &Path) -> Vec<Diagnostic> {
             } else {
                 out.push(warn(
                     "patterns refs",
-                    format!("{} broken reference(s): {}", broken.len(), broken.join(", ")),
+                    format!(
+                        "{} broken reference(s): {}",
+                        broken.len(),
+                        broken.join(", ")
+                    ),
                     Some("fix paths in PATTERNS.md or re-run adoption"),
                 ));
             }
