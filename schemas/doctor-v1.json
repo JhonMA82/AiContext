@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aicontext/doctor/v1",
+  "title": "AIContext doctor result v1",
+  "type": "object",
+  "required": ["schema", "healthy", "diagnostics"],
+  "properties": {
+    "schema": { "const": "aicontext/doctor/v1" },
+    "healthy": { "type": "boolean" },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "detail"],
+        "properties": {
+          "name": { "type": "string" },
+          "status": { "enum": ["ok", "warn", "fail"] },
+          "detail": { "type": "string" },
+          "remediation": { "type": "string" }
+        }
+      }
+    }
+  }
+}

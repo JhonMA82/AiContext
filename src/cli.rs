@@ -44,6 +44,11 @@ pub enum Command {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Diagnose CLI, config, state and tooling with exact remediation
+    Doctor {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// External tool detection and recommendations (read-only)
     Tools {
         #[command(subcommand)]
