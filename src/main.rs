@@ -8,6 +8,7 @@ mod scan;
 mod search;
 mod state;
 mod tools;
+mod tools_install;
 
 use anyhow::Result;
 use clap::Parser;
@@ -47,6 +48,12 @@ fn run(cli: Cli) -> Result<i32> {
         Command::Tools { cmd } => match cmd {
             ToolsCommand::Plan { json } => tools::cmd_plan(json),
             ToolsCommand::Status { json } => tools::cmd_status(json),
+            ToolsCommand::Install {
+                tool,
+                recommended,
+                yes,
+                json,
+            } => tools_install::cmd_install(tool, recommended, yes, json),
         },
         Command::Agent { cmd } => match cmd {
             AgentCommand::Install { agent, json } => agent::cmd_install(agent, json),

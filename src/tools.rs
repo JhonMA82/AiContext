@@ -114,7 +114,7 @@ fn is_docs_heavy(root: &std::path::Path, report: &crate::scan::ScanReport) -> bo
 
 /// Build the plan. Read-only: never installs anything.
 /// `mode()` resolves the per-tool mode from aicontext.toml (default auto).
-fn build_plan(root: &std::path::Path) -> Vec<PlanSection> {
+pub(crate) fn build_plan(root: &std::path::Path) -> Vec<PlanSection> {
     let report = crate::scan::collect_scan(root).unwrap_or_else(|_| empty_report(root));
     let cfg = crate::config::RepoConfig::load(root).ok();
     let mode = |name: &str, fallback: &str| -> String {
@@ -295,7 +295,19 @@ pub fn cmd_plan(json: bool) -> anyhow::Result<i32> {
 pub fn cmd_status(json: bool) -> anyhow::Result<i32> {
     let root = crate::scan::current_dir_root()?;
     let _ = root;
-    let tools = detect_core_tools();
+    let mut tools = detect_core_tools();
+    // Overlay registry ownership: managed tools report managed_by=managed
+    // with the verified installed version, even off PATH.
+    if let Ok(prefix) = crate::tools_install::managed_prefix() {
+        let registry = crate::tools_install::load_registry(&prefix);
+        for t in tools.iter_mut() {
+            if let Some(owned) = registry.tools.iter().find(|m| m.name == t.name) {
+                t.managed_by = "managed".to_string();
+                t.version = Some(owned.version.clone());
+                t.available = true;
+            }
+        }
+    }
     if json {
         #[derive(Serialize)]
         struct StatusOut<'a> {

@@ -94,6 +94,19 @@ pub enum ToolsCommand {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Install tooling into the managed prefix (plan first, confirm required)
+    Install {
+        /// Single tool to install (see `tools plan`)
+        tool: Option<String>,
+        /// Install all missing recommended tools with safe methods
+        #[arg(long, default_value_t = false)]
+        recommended: bool,
+        /// Skip the interactive confirmation (required in non-tty use)
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]

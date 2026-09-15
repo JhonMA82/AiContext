@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aicontext/tools-install/v1",
+  "title": "AIContext tools install result v1",
+  "type": "object",
+  "required": ["schema", "requested", "installed", "skipped", "already_present"],
+  "properties": {
+    "schema": { "const": "aicontext/tools-install/v1" },
+    "requested": { "type": "array", "items": { "type": "string" } },
+    "installed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tool", "version", "path"],
+        "properties": {
+          "tool": { "type": "string" },
+          "version": { "type": "string" },
+          "path": { "type": "string" }
+        }
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tool", "reason"],
+        "properties": {
+          "tool": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "already_present": { "type": "array", "items": { "type": "string" } },
+    "note": { "type": "string" }
+  }
+}
