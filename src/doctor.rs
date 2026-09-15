@@ -214,27 +214,34 @@ pub fn run_doctor(root: &Path) -> Vec<Diagnostic> {
     }
 
     // Stale tgrep index: a .tgrep/ dir without a tgrep binary is dead weight.
-    if root.join(".tgrep").exists() && !tools::detect_tool("tgrep").available {
-        out.push(warn(
-            "tgrep index",
-            ".tgrep/ exists but tgrep is not installed",
-            Some("install tgrep or delete .tgrep/"),
-        ));
+    // Positive condition first: only problems are reported, nothing when healthy.
+    if root.join(".tgrep").exists() {
+        if tools::detect_tool("tgrep").available {
+            // healthy: index dir with its binary present, nothing to report
+        } else {
+            out.push(warn(
+                "tgrep index",
+                ".tgrep/ exists but tgrep is not installed",
+                Some("install tgrep or delete .tgrep/"),
+            ));
+        }
     }
 
     // CodeGraph eligibility for large repos without it.
     if let Ok(report) = crate::scan::collect_scan(root) {
-        if report.complexity.profile == "large"
-            && !tools::detect_tool("codegraph").available
-        {
-            out.push(warn(
-                "codegraph",
-                format!(
-                    "large repo ({}), codegraph not installed — impact queries degraded",
-                    report.complexity.reason
-                ),
-                Some("see `aicontext tools plan`"),
-            ));
+        if report.complexity.profile == "large" {
+            if tools::detect_tool("codegraph").available {
+                // healthy: large repo with graph analysis available
+            } else {
+                out.push(warn(
+                    "codegraph",
+                    format!(
+                        "large repo ({}), codegraph not installed — impact queries degraded",
+                        report.complexity.reason
+                    ),
+                    Some("see `aicontext tools plan`"),
+                ));
+            }
         }
     }
 

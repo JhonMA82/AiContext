@@ -2,6 +2,7 @@ mod check;
 mod cli;
 mod config;
 mod doctor;
+mod search;
 mod output;
 mod scan;
 mod state;
@@ -33,8 +34,15 @@ fn run(cli: Cli) -> Result<i32> {
         Command::Scan { json } => scan::cmd_scan(json),
         Command::Sync { check, json } => state::cmd_sync(check, json),
         Command::Status { json } => state::cmd_status(json),
-        Command::Check { json } => check::cmd_check(json),
-        Command::Doctor { json } => doctor::cmd_doctor(json),
+            Command::Check { json } => check::cmd_check(json),
+            Command::Doctor { json } => doctor::cmd_doctor(json),
+            Command::Search {
+                query,
+                text,
+                structure,
+                impact,
+                json,
+            } => search::cmd_search(query, text, structure, impact, json),
         Command::Tools { cmd } => match cmd {
             ToolsCommand::Plan { json } => tools::cmd_plan(json),
             ToolsCommand::Status { json } => tools::cmd_status(json),

@@ -49,6 +49,22 @@ pub enum Command {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Layered search: knowledge, text (tgrep/rg/git-grep), AST, impact
+    Search {
+        /// Literal text or symbol to look for (AST pattern with --structure)
+        query: String,
+        /// Force literal text search (default)
+        #[arg(long, default_value_t = false)]
+        text: bool,
+        /// Treat query as an ast-grep structural pattern
+        #[arg(long, default_value_t = false)]
+        structure: bool,
+        /// Callers/callees/impact (CodeGraph when enabled, else degraded)
+        #[arg(long, default_value_t = false)]
+        impact: bool,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// External tool detection and recommendations (read-only)
     Tools {
         #[command(subcommand)]

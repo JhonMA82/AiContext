@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aicontext/search/v1",
+  "title": "AIContext search result v1",
+  "type": "object",
+  "required": ["schema", "query", "mode", "backend", "knowledge", "hits"],
+  "properties": {
+    "schema": { "const": "aicontext/search/v1" },
+    "query": { "type": "string" },
+    "mode": { "enum": ["text", "structure", "impact"] },
+    "backend": { "type": "string" },
+    "knowledge": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "text"],
+        "properties": {
+          "file": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 },
+          "text": { "type": "string" }
+        }
+      }
+    },
+    "hits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "line", "text"],
+        "properties": {
+          "path": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 },
+          "text": { "type": "string" }
+        }
+      }
+    },
+    "note": { "type": "string" }
+  }
+}
