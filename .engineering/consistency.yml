@@ -1,0 +1,10 @@
+schema: aicontext/consistency/v1
+version:
+  source: Cargo.toml
+  projections: []
+commands:
+  documented: []
+protected: []
+checks:
+  ast_grep:
+    rules: .engineering/rules/ast-grep

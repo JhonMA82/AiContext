@@ -5,3 +5,5 @@
 /target/
 fixtures/*/target/
 fixtures/*/Cargo.lock
+.aicontext/
+.tgrep/

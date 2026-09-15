@@ -1,0 +1,29 @@
+schema = "aicontext/v1"
+
+[project]
+name = "AiContext"
+profile = "auto"
+
+[state]
+project_state = ".engineering/PROJECT_STATE.md"
+patterns = ".engineering/PATTERNS.md"
+
+[version]
+source = "Cargo.toml"
+
+[search]
+text = "auto"
+structural = "ast-grep"
+graph = "auto"
+
+[tools.tgrep]
+mode = "auto"
+
+[tools.codegraph]
+mode = "auto"
+
+[tools.rtk]
+mode = "prefer"
+
+[consistency]
+manifest = ".engineering/consistency.yml"
