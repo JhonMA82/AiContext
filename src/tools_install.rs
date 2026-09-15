@@ -180,12 +180,12 @@ fn cargo_install(prefix: &Path, package: &str) -> Result<()> {
     }
 }
 
-fn confirm_install(yes: bool, plan_lines: &[String], prefix: &Path) -> Result<bool> {
+fn confirm_plan(yes: bool, title: &str, plan_lines: &[String], prefix: &Path) -> Result<bool> {
     if yes {
         return Ok(true);
     }
     if std::io::stdin().is_terminal() {
-        println!("Installation plan:");
+        println!("{title}");
         for line in plan_lines {
             println!("  {line}");
         }
@@ -272,7 +272,7 @@ pub fn cmd_install(tool: Option<String>, recommended: bool, yes: bool, json: boo
                 .iter()
                 .map(|(name, package, _)| format!("{name} via cargo install {package} --locked"))
                 .collect();
-            if confirm_install(yes, &plan_lines, &prefix)? {
+            if confirm_plan(yes, "Installation plan:", &plan_lines, &prefix)? {
                 let bin_dir = prefix.join(BIN_DIR);
                 std::fs::create_dir_all(&bin_dir)?;
                 let mut registry = load_registry(&prefix);
@@ -371,6 +371,258 @@ pub fn cmd_install(tool: Option<String>, recommended: bool, yes: bool, json: boo
     Ok(exit_code)
 }
 
+/// Pure helper: drop one owned entry. Returns true when something was removed.
+fn remove_owned(registry: &mut Registry, name: &str) -> bool {
+    let before = registry.tools.len();
+    registry.tools.retain(|t| t.name != name);
+    registry.tools.len() != before
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct Removed {
+    tool: String,
+    path: String,
+}
+
+pub fn cmd_update(yes: bool, json: bool) -> Result<i32> {
+    let prefix = managed_prefix()?;
+    let mut registry = load_registry(&prefix);
+    let mut updatable: Vec<(String, String, String)> = Vec::new();
+    let mut skipped: Vec<Skipped> = Vec::new();
+    for entry in &registry.tools {
+        match method_for(&entry.name) {
+            Some(Method::Cargo { package, binary }) => {
+                updatable.push((entry.name.clone(), package.to_string(), binary.to_string()))
+            }
+            _ => skipped.push(Skipped {
+                tool: entry.name.clone(),
+                reason: "no safe managed update method; update manually".to_string(),
+            }),
+        }
+    }
+    let mut updated: Vec<Installed> = Vec::new();
+    let mut unchanged: Vec<String> = Vec::new();
+    let mut note: Option<String> = None;
+    let mut exit_code = 0;
+    if updatable.is_empty() {
+        if registry.tools.is_empty() {
+            note = Some("no managed tools; nothing to update".to_string());
+        }
+    } else {
+        let have_cargo = cargo_present();
+        if have_cargo {
+            let plan_lines: Vec<String> = updatable
+                .iter()
+                .map(|(name, package, _)| format!("{name} via cargo install {package} --locked"))
+                .collect();
+            if confirm_plan(yes, "Update plan:", &plan_lines, &prefix)? {
+                let bin_dir = prefix.join(BIN_DIR);
+                for (name, package, binary) in &updatable {
+                    let before = registry
+                        .tools
+                        .iter()
+                        .find(|t| &t.name == name)
+                        .map(|t| t.version.clone())
+                        .unwrap_or_default();
+                    match cargo_install(&prefix, package) {
+                        Ok(()) => {
+                            let bin_path = bin_dir.join(binary);
+                            let version =
+                                probe_version(&bin_path).unwrap_or_else(|| "unknown".to_string());
+                            if version == before {
+                                unchanged.push(name.clone());
+                            } else {
+                                if let Some(slot) =
+                                    registry.tools.iter_mut().find(|t| &t.name == name)
+                                {
+                                    slot.version = version.clone();
+                                    slot.path = bin_path.to_string_lossy().to_string();
+                                    slot.installed_at = now_secs();
+                                }
+                                updated.push(Installed {
+                                    tool: name.clone(),
+                                    version,
+                                    path: bin_path.to_string_lossy().to_string(),
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            skipped.push(Skipped {
+                                tool: name.clone(),
+                                reason: format!("{e:#}"),
+                            });
+                            exit_code = 5;
+                        }
+                    }
+                }
+                save_registry(&prefix, &registry)?;
+            } else {
+                note = Some("declined by user; nothing was updated".to_string());
+            }
+        } else {
+            let e = crate::output::AiError::new(
+                "MISSING_REQUIRED_TOOL",
+                "cargo is required for managed updates but was not found",
+                Some("install a Rust toolchain first"),
+            );
+            crate::output::print_error(&anyhow::anyhow!(e), json);
+            return Ok(3);
+        }
+    }
+    if json {
+        #[derive(Serialize)]
+        struct UpdateOut<'a> {
+            schema: &'a str,
+            updated: &'a [Installed],
+            unchanged: &'a [String],
+            skipped: &'a [Skipped],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            note: &'a Option<String>,
+        }
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&UpdateOut {
+                schema: "aicontext/tools-update/v1",
+                updated: &updated,
+                unchanged: &unchanged,
+                skipped: &skipped,
+                note: &note,
+            })?
+        );
+        return Ok(exit_code);
+    }
+    for u in &updated {
+        println!("✓ {} updated to {} at {}", u.tool, u.version, u.path);
+    }
+    for name in &unchanged {
+        println!("= {name} already current");
+    }
+    for s in &skipped {
+        println!("! {} skipped: {}", s.tool, s.reason);
+    }
+    if let Some(n) = note {
+        println!("{n}");
+    }
+    Ok(exit_code)
+}
+
+pub fn cmd_uninstall(tool: Option<String>, managed: bool, yes: bool, json: bool) -> Result<i32> {
+    let prefix = managed_prefix()?;
+    let requested: Vec<String> = match (tool, managed) {
+        (Some(t), _) => vec![t],
+        (None, true) => load_registry(&prefix)
+            .tools
+            .iter()
+            .map(|t| t.name.clone())
+            .collect(),
+        (None, false) => {
+            let e = crate::output::AiError::new(
+                "INVALID_USAGE",
+                "specify a tool or pass --managed",
+                None,
+            );
+            crate::output::print_error(&anyhow::anyhow!(e), json);
+            return Ok(2);
+        }
+    };
+    for name in &requested {
+        if method_for(name).is_none() {
+            let e = crate::output::AiError::new(
+                "UNKNOWN_TOOL",
+                format!("unknown tool '{name}' (see `aicontext tools plan`)"),
+                None,
+            );
+            crate::output::print_error(&anyhow::anyhow!(e), json);
+            return Ok(2);
+        }
+    }
+    let mut registry = load_registry(&prefix);
+    let mut removable: Vec<(String, String)> = Vec::new();
+    let mut refused: Vec<Skipped> = Vec::new();
+    let mut not_installed: Vec<String> = Vec::new();
+    for name in &requested {
+        match registry.tools.iter().find(|t| &t.name == name) {
+            Some(entry) => removable.push((name.clone(), entry.path.clone())),
+            None => {
+                if crate::tools::detect_tool(name).available {
+                    refused.push(Skipped {
+                        tool: name.clone(),
+                        reason: "not managed by AIContext (external install); refusing to remove"
+                            .to_string(),
+                    });
+                } else {
+                    not_installed.push(name.clone());
+                }
+            }
+        }
+    }
+    let mut removed: Vec<Removed> = Vec::new();
+    let mut note: Option<String> = None;
+    if removable.is_empty() {
+        if requested.is_empty() {
+            note = Some("no managed tools; nothing to remove".to_string());
+        }
+    } else {
+        let plan_lines: Vec<String> = removable
+            .iter()
+            .map(|(name, path)| format!("remove managed {name} at {path}"))
+            .collect();
+        if confirm_plan(yes, "Removal plan:", &plan_lines, &prefix)? {
+            for (name, path) in &removable {
+                // Best effort on the file; the registry entry is authoritative.
+                std::fs::remove_file(path).ok();
+                remove_owned(&mut registry, name);
+                removed.push(Removed {
+                    tool: name.clone(),
+                    path: path.clone(),
+                });
+            }
+            save_registry(&prefix, &registry)?;
+        } else {
+            note = Some("declined by user; nothing was removed".to_string());
+        }
+    }
+    // Refusing to delete external software is a guard: exit 1, never touch it.
+    let exit_code = if refused.is_empty() { 0 } else { 1 };
+    if json {
+        #[derive(Serialize)]
+        struct UninstallOut<'a> {
+            schema: &'a str,
+            requested: &'a [String],
+            removed: &'a [Removed],
+            refused: &'a [Skipped],
+            not_installed: &'a [String],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            note: &'a Option<String>,
+        }
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&UninstallOut {
+                schema: "aicontext/tools-uninstall/v1",
+                requested: &requested,
+                removed: &removed,
+                refused: &refused,
+                not_installed: &not_installed,
+                note: &note,
+            })?
+        );
+        return Ok(exit_code);
+    }
+    for r in &removed {
+        println!("✓ removed managed {} at {}", r.tool, r.path);
+    }
+    for r in &refused {
+        println!("! {} refused: {}", r.tool, r.reason);
+    }
+    for name in &not_installed {
+        println!("- {name} not installed");
+    }
+    if let Some(n) = note {
+        println!("{n}");
+    }
+    Ok(exit_code)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,5 +676,24 @@ mod tests {
             );
         }
         assert!(GLOBAL_ADAPTERS.contains(&"lychee"));
+    }
+
+    #[test]
+    fn remove_owned_drops_exactly_one_entry() {
+        let mut reg = Registry::default();
+        for name in ["ast-grep", "lychee"] {
+            reg.tools.push(ManagedTool {
+                name: name.to_string(),
+                version: "v".to_string(),
+                method: "m".to_string(),
+                path: "p".to_string(),
+                installed_at: 0,
+                managed_by: "managed".to_string(),
+            });
+        }
+        assert!(remove_owned(&mut reg, "ast-grep"));
+        assert!(reg.tools.iter().all(|t| t.name != "ast-grep"));
+        assert!(remove_owned(&mut reg, "ast-grep") == false);
+        assert_eq!(reg.tools.len(), 1);
     }
 }

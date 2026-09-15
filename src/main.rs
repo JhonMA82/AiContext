@@ -54,6 +54,13 @@ fn run(cli: Cli) -> Result<i32> {
                 yes,
                 json,
             } => tools_install::cmd_install(tool, recommended, yes, json),
+            ToolsCommand::Update { yes, json } => tools_install::cmd_update(yes, json),
+            ToolsCommand::Uninstall {
+                tool,
+                managed,
+                yes,
+                json,
+            } => tools_install::cmd_uninstall(tool, managed, yes, json),
         },
         Command::Agent { cmd } => match cmd {
             AgentCommand::Install { agent, json } => agent::cmd_install(agent, json),

@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aicontext/tools-update/v1",
+  "title": "AIContext tools update result v1",
+  "type": "object",
+  "required": ["schema", "updated", "unchanged", "skipped"],
+  "properties": {
+    "schema": { "const": "aicontext/tools-update/v1" },
+    "updated": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tool", "version", "path"],
+        "properties": {
+          "tool": { "type": "string" },
+          "version": { "type": "string" },
+          "path": { "type": "string" }
+        }
+      }
+    },
+    "unchanged": { "type": "array", "items": { "type": "string" } },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tool", "reason"],
+        "properties": {
+          "tool": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "note": { "type": "string" }
+  }
+}

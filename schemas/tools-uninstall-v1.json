@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aicontext/tools-uninstall/v1",
+  "title": "AIContext tools uninstall result v1",
+  "type": "object",
+  "required": ["schema", "requested", "removed", "refused", "not_installed"],
+  "properties": {
+    "schema": { "const": "aicontext/tools-uninstall/v1" },
+    "requested": { "type": "array", "items": { "type": "string" } },
+    "removed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tool", "path"],
+        "properties": {
+          "tool": { "type": "string" },
+          "path": { "type": "string" }
+        }
+      }
+    },
+    "refused": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tool", "reason"],
+        "properties": {
+          "tool": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "not_installed": { "type": "array", "items": { "type": "string" } },
+    "note": { "type": "string" }
+  }
+}

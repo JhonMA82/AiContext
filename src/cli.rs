@@ -107,6 +107,27 @@ pub enum ToolsCommand {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Update managed tools only (never external installs)
+    Update {
+        /// Skip the interactive confirmation (required in non-tty use)
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Remove managed tools only (refuses external installs)
+    Uninstall {
+        /// Single managed tool to remove
+        tool: Option<String>,
+        /// Remove every tool owned by AIContext
+        #[arg(long, default_value_t = false)]
+        managed: bool,
+        /// Skip the interactive confirmation (required in non-tty use)
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
