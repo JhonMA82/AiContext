@@ -146,16 +146,16 @@ pub(crate) fn build_plan(root: &std::path::Path) -> Vec<PlanSection> {
     )];
     let mut recommended = Vec::new();
     recommended.push(entry(
-"tgrep",
-"recommended",
-if medium_or_large {
-"medium/large repository: indexed text search"
-} else {
-"small repository: optional, rg/git-grep suffice"
-},
-Some("brew install tgrep | cargo install --path tgrep-cli --locked (managed install verifies checksums)"),
-off("tgrep"),
-));
+        "tgrep",
+        "recommended",
+        if medium_or_large {
+            "medium/large repository: indexed text search"
+        } else {
+            "small repository: optional, rg/git-grep suffice"
+        },
+        Some("brew install tgrep (verified: Microsoft tgrep 1.x with trigram index + serve)"),
+        off("tgrep"),
+    ));
     recommended.push(entry(
         "rtk",
         "recommended",

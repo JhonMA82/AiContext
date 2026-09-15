@@ -71,8 +71,13 @@ fn run_backend(root: &Path, program: &str, args: &[String]) -> Option<Vec<TextHi
 /// Literal search with graceful degradation: tgrep -> rg -> git grep.
 /// Returns the backend name and hits.
 fn literal_search(root: &Path, query: &str) -> (String, Vec<TextHit>) {
+    // Verified against Microsoft tgrep 1.x: `search -n` emits ripgrep-style
+    // path:line:text and works without a prebuilt index (uses it when present).
     if crate::tools::detect_tool("tgrep").available {
-        let args = vec![query.to_string(), ".".to_string()];
+        let args = ["search", "-n", "--color", "never", "-e", query, "--", "."]
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
         if let Some(hits) = run_backend(root, "tgrep", &args) {
             return ("tgrep".to_string(), hits);
         }

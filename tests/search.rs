@@ -79,7 +79,7 @@ fn literal_search_json_contract() {
     assert_eq!(v["schema"], "aicontext/search/v1");
     assert_eq!(v["query"], "hello");
     assert_eq!(v["mode"], "text");
-    let hits = v["hits"].as_array().unwrap();
+    let hits = v.get("hits").and_then(|x| x.as_array()).unwrap();
     assert!(
         hits.iter()
             .any(|h| h["path"].as_str().unwrap().contains("index.js")),
@@ -96,7 +96,7 @@ fn search_hits_knowledge_first() {
     let (cs, out) = run(&dir, ["search", "Package manager", "--json"]);
     assert_eq!(cs, 0);
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-    let knowledge = v["knowledge"].as_array().unwrap();
+    let knowledge = v.get("knowledge").and_then(|x| x.as_array()).unwrap();
     assert!(
         knowledge
             .iter()
@@ -129,7 +129,7 @@ fn structural_search_uses_ast_grep() {
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["mode"], "structure");
     assert_eq!(v["backend"], "ast-grep");
-    let hits = v["hits"].as_array().unwrap();
+    let hits = v.get("hits").and_then(|x| x.as_array()).unwrap();
     assert!(
         hits.iter()
             .any(|h| h["path"].as_str().unwrap().contains("index.js")),
@@ -147,4 +147,31 @@ fn impact_degrades_without_codegraph() {
     // No codegraph in P0: either degraded text results with a note,
     // or codegraph present (then text hits still supplement).
     assert!(v.get("note").is_some() || v["hits"].as_array().is_some());
+}
+
+fn tgrep_present() -> bool {
+    Command::new("tgrep")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[test]
+fn literal_search_prefers_verified_tgrep_backend() {
+    // Without tgrep the router degrades to rg/git grep (covered elsewhere).
+    if tgrep_present() == false {
+        return;
+    }
+    let dir = fixture_repo("node-single");
+    let (c, out) = run(&dir, ["search", "hello", "--json"]);
+    assert_eq!(c, 0, "search must succeed: {out}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["backend"], "tgrep");
+    let hits = v.get("hits").and_then(|x| x.as_array()).unwrap();
+    assert!(
+        hits.iter()
+            .any(|h| h["path"].as_str().unwrap().contains("index.js")),
+        "tgrep must find index.js, got {hits:?}"
+    );
 }

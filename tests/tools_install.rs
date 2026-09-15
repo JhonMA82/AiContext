@@ -5,22 +5,44 @@ fn bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_aicontext"))
 }
 
+fn run_with_path<const N: usize>(
+    dir: &Path,
+    home: &Path,
+    path: String,
+    args: [&str; N],
+) -> (i32, String) {
+    let out = Command::new(bin())
+        .args(args)
+        .current_dir(dir)
+        .env("HOME", home)
+        .env("PATH", path)
+        .output()
+        .expect("run aicontext");
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    (out.status.code().unwrap_or(255), text)
+}
+
 fn run_with_env<const N: usize>(
     dir: &Path,
     home: &Path,
     path_extra: Option<&Path>,
     args: [&str; N],
 ) -> (i32, String) {
-    let mut cmd = Command::new(bin());
-    cmd.args(args).current_dir(dir).env("HOME", home);
-    if let Some(extra) = path_extra {
-        let base = std::env::var("PATH").unwrap_or_default();
-        cmd.env("PATH", format!("{}:{base}", extra.display()));
-    }
-    let out = cmd.output().expect("run aicontext");
-    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
-    text.push_str(&String::from_utf8_lossy(&out.stderr));
-    (out.status.code().unwrap_or(255), text)
+    let base = std::env::var("PATH").unwrap_or_default();
+    let path = match path_extra {
+        Some(extra) => format!("{}:{base}", extra.display()),
+        None => base,
+    };
+    run_with_path(dir, home, path, args)
+}
+
+/// PATH pointing at an empty dir: every external probe fails deterministically,
+/// in any environment, without touching the real toolchain.
+fn isolated_path(home: &Path) -> String {
+    let empty = home.join("emptybin");
+    std::fs::create_dir_all(&empty).expect("mkdir");
+    empty.to_string_lossy().into_owned()
 }
 
 fn fresh_case(tag: &str) -> (PathBuf, PathBuf) {
@@ -66,12 +88,20 @@ fn usage_error_without_target() {
 #[test]
 fn manual_method_is_skipped_with_reason() {
     let (home, work) = fresh_case("manual");
-    let (c, out) = run_with_env(
-        &work,
-        &home,
-        None,
-        ["tools", "install", "tgrep", "--yes", "--json"],
-    );
+    // Isolated PATH: tgrep is guaranteed absent here, so its manual method
+    // is exercised even on machines where tgrep is really installed.
+    let path = isolated_path(&home);
+    let out = Command::new(bin())
+        .args(["tools", "install", "tgrep", "--yes", "--json"])
+        .current_dir(&work)
+        .env("HOME", &home)
+        .env("PATH", path)
+        .output()
+        .expect("run aicontext");
+    let c = out.status.code().unwrap_or(255);
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    let out = text;
     assert_eq!(c, 0, "skip-only runs succeed: {out}");
     let v: serde_json::Value = serde_json::from_str(&out).expect("must be JSON");
     assert_eq!(v["schema"], "aicontext/tools-install/v1");

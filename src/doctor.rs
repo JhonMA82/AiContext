@@ -83,6 +83,31 @@ fn broken_path_refs(root: &Path, patterns_path: &Path) -> Vec<String> {
     broken
 }
 
+/// Parse `tgrep status` into a one-line summary. None when status fails.
+fn tgrep_status_summary(root: &Path) -> Option<String> {
+    let out = std::process::Command::new("tgrep")
+        .args(["status", "."])
+        .current_dir(root)
+        .output()
+        .ok()?;
+    if out.status.success() {
+        let text = String::from_utf8_lossy(&out.stdout);
+        let mut files = "?";
+        let mut server = "?";
+        for line in text.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("Files:") {
+                files = rest.trim();
+            } else if let Some(rest) = line.strip_prefix("Server:") {
+                server = rest.trim();
+            }
+        }
+        Some(format!("{files} files indexed, server: {server}"))
+    } else {
+        None
+    }
+}
+
 pub fn run_doctor(root: &Path) -> Vec<Diagnostic> {
     let mut out = Vec::new();
 
@@ -218,11 +243,19 @@ pub fn run_doctor(root: &Path) -> Vec<Diagnostic> {
         }
     }
 
-    // Stale tgrep index: a .tgrep/ dir without a tgrep binary is dead weight.
+    // Stale tgrep index: a .tgrep/ dir without a tgrep binary is dead weight;
+    // with the binary present, `tgrep status` is authoritative.
     // Positive condition first: only problems are reported, nothing when healthy.
     if root.join(".tgrep").exists() {
         if tools::detect_tool("tgrep").available {
-            // healthy: index dir with its binary present, nothing to report
+            match tgrep_status_summary(root) {
+                Some(summary) => out.push(ok("tgrep index", summary)),
+                None => out.push(warn(
+                    "tgrep index",
+                    ".tgrep/ exists but `tgrep status` fails; the index may be corrupt",
+                    Some("rebuild with `tgrep index .`"),
+                )),
+            }
         } else {
             out.push(warn(
                 "tgrep index",

@@ -89,7 +89,7 @@ fn method_for(tool: &str) -> Option<Method> {
             binary: "zizmor",
         }),
         "tgrep" => Some(Method::Manual {
-            instructions: "brew install tgrep, or build from the official source (cargo install --path tgrep-cli --locked); verify against published checksums",
+            instructions: "brew install tgrep (verified: Microsoft tgrep 1.x); or build from https://github.com/microsoft/tgrep and verify checksums",
         }),
         "rtk" => Some(Method::Manual {
             instructions: "install Rust Token Killer from rtk-ai/rtk, verify with `rtk gain`, then enable with `rtk init -g --agent pi`",
