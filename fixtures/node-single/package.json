@@ -1,0 +1,8 @@
+{
+  "name": "node-single-fixture",
+  "version": "0.1.0",
+  "scripts": {
+    "test": "node --test",
+    "generate:feature": "node scripts/gen.js"
+  }
+}

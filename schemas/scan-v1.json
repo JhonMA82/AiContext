@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aicontext/scan/v1",
+  "title": "AIContext scan report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "git",
+    "languages",
+    "packages",
+    "commands",
+    "tools",
+    "complexity",
+    "version_candidates",
+    "docs",
+    "ci"
+  ],
+  "properties": {
+    "schema": { "const": "aicontext/scan/v1" },
+    "git": {
+      "type": "object",
+      "required": ["root", "tracked_files"],
+      "properties": {
+        "root": { "type": "string" },
+        "head": { "type": ["string", "null"] },
+        "short_head": { "type": ["string", "null"] },
+        "branch": { "type": ["string", "null"] },
+        "tracked_files": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "languages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["language", "files", "loc"],
+        "properties": {
+          "language": { "type": "string" },
+          "files": { "type": "integer", "minimum": 0 },
+          "loc": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["manager", "manifest", "workspaces", "scripts"],
+        "properties": {
+          "manager": { "type": "string" },
+          "manifest": { "type": "string" },
+          "workspaces": { "type": "array", "items": { "type": "string" } },
+          "scripts": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "commands": { "type": "array", "items": { "type": "string" } },
+    "tools": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["name", "available", "managed_by"],
+        "properties": {
+          "name": { "type": "string" },
+          "available": { "type": "boolean" },
+          "version": { "type": ["string", "null"] },
+          "managed_by": { "type": "string" }
+        }
+      }
+    },
+    "complexity": {
+      "type": "object",
+      "required": ["profile", "source_files", "loc", "workspaces", "languages", "reason"],
+      "properties": {
+        "profile": { "enum": ["small", "medium", "large"] },
+        "source_files": { "type": "integer", "minimum": 0 },
+        "loc": { "type": "integer", "minimum": 0 },
+        "workspaces": { "type": "integer", "minimum": 0 },
+        "languages": { "type": "integer", "minimum": 0 },
+        "reason": { "type": "string" }
+      }
+    },
+    "version_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "version"],
+        "properties": {
+          "source": { "type": "string" },
+          "version": { "type": "string" }
+        }
+      }
+    },
+    "docs": { "type": "array", "items": { "type": "string" } },
+    "ci": { "type": "array", "items": { "type": "string" } }
+  }
+}

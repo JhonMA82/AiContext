@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aicontext/error/v1",
+  "title": "AIContext error envelope v1",
+  "type": "object",
+  "required": ["schema", "code", "message", "remediation"],
+  "properties": {
+    "schema": { "const": "aicontext/error/v1" },
+    "code": { "type": "string" },
+    "message": { "type": "string" },
+    "remediation": {
+      "type": "object",
+      "properties": {
+        "command": { "type": "string" }
+      }
+    }
+  }
+}

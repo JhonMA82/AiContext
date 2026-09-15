@@ -1,0 +1,12 @@
+{
+  "name": "bun-mono-fixture",
+  "version": "1.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "bun x tsc --noEmit"
+  }
+}

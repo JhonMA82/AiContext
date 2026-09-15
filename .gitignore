@@ -1,2 +1,7 @@
 # Local Pi runtime state
 .atl/
+
+# Rust build output
+/target/
+fixtures/*/target/
+fixtures/*/Cargo.lock
