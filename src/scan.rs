@@ -63,12 +63,9 @@ pub struct VersionCandidate {
 }
 
 fn git_output<const N: usize>(root: &Path, args: [&str; N]) -> Option<String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .output()
-        .ok()?;
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(root).args(args);
+    let out = crate::output::command_output(cmd, 15)?;
     if !out.status.success() {
         return None;
     }

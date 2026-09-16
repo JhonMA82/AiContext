@@ -157,6 +157,131 @@ fn tgrep_present() -> bool {
         .unwrap_or(false)
 }
 
+fn unique_base(prefix: &str) -> PathBuf {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let base = std::env::temp_dir().join(format!(
+        "aicontext-search-{prefix}-{}-{n}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    if base.exists() {
+        std::fs::remove_dir_all(&base).expect("clean");
+    }
+    std::fs::create_dir_all(&base).expect("mkdir");
+    base
+}
+
+fn run_with_env<const N: usize, const M: usize>(
+    dir: &Path,
+    args: [&str; N],
+    path: &str,
+    extra: &[(&str, &str); M],
+) -> (i32, String) {
+    let mut cmd = Command::new(bin());
+    cmd.args(args).current_dir(dir).env("PATH", path);
+    for (k, v) in extra {
+        cmd.env(k, v);
+    }
+    let out = cmd.output().expect("run aicontext");
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    (out.status.code().unwrap_or(255), text)
+}
+
+#[test]
+fn literal_text_search_is_fixed_string() {
+    let dir = fixture_repo("node-single");
+    std::fs::write(dir.join("regex-probe.txt"), "axb\n").unwrap();
+    git(&dir, ["add", "-A"]);
+    git(&dir, ["commit", "-qm", "probe"]);
+    // Regex `a.b` would match `axb`; literal text mode must not.
+    let (c, out) = run(&dir, ["search", "a.b", "--json"]);
+    assert_eq!(c, 0, "search must succeed: {out}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let hits = v.get("hits").and_then(|x| x.as_array()).unwrap();
+    assert!(
+        hits.is_empty(),
+        "literal `a.b` must not match `axb`, got {hits:?} (backend {})",
+        v.get("backend").and_then(|b| b.as_str()).unwrap_or("?")
+    );
+    // Sanity: the literal needle itself is found through the same router.
+    let (c2, out2) = run(&dir, ["search", "axb", "--json"]);
+    assert_eq!(c2, 0);
+    let v2: serde_json::Value = serde_json::from_str(&out2).unwrap();
+    let hits2 = v2.get("hits").and_then(|x| x.as_array()).unwrap();
+    assert!(
+        hits2.iter().any(|h| h
+            .get("path")
+            .and_then(|p| p.as_str())
+            .unwrap_or("")
+            .contains("regex-probe")),
+        "literal `axb` must be found, got {hits2:?}"
+    );
+}
+
+#[test]
+fn literal_search_routes_through_tgrep_with_fixed_strings() {
+    let dir = fixture_repo("node-single");
+    let bindir = unique_base("shim");
+    let args_file = bindir.join("tgrep-args.txt");
+    let script = "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"tgrep test-0.0.0\"; exit 0; fi\necho \"$@\" > \"$TGREP_ARGS_FILE\"\necho \"app.js:3:hello world\"\nexit 0\n";
+    std::fs::write(bindir.join("tgrep"), script).expect("shim");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let path = bindir.join("tgrep");
+        let mut perms = std::fs::metadata(&path).expect("meta").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).expect("chmod");
+    }
+    let path = format!(
+        "{}:{}",
+        bindir.to_string_lossy(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let args_path = args_file.to_string_lossy().to_string();
+    let (c, out) = run_with_env(
+        &dir,
+        ["search", "hello", "--json"],
+        &path,
+        &[("TGREP_ARGS_FILE", args_path.as_str())],
+    );
+    assert_eq!(c, 0, "search must succeed: {out}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v.get("backend").and_then(|b| b.as_str()), Some("tgrep"));
+    let hits = v.get("hits").and_then(|x| x.as_array()).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].get("path").and_then(|p| p.as_str()), Some("app.js"));
+    assert_eq!(hits[0].get("line").and_then(|l| l.as_u64()), Some(3));
+    let recorded = std::fs::read_to_string(&args_file).expect("shim must record args");
+    assert!(
+        recorded.contains("-F"),
+        "tgrep must run in fixed-strings mode, got: {recorded}"
+    );
+}
+
+#[test]
+fn structural_search_without_binary_is_exit_3() {
+    let dir = fixture_repo("node-single");
+    // Restricted PATH: only git resolves, so ast-grep probes as missing.
+    let bindir = unique_base("restricted");
+    let git_path = Command::new("sh")
+        .args(["-c", "command -v git"])
+        .output()
+        .expect("locate git");
+    let git_bin = String::from_utf8_lossy(&git_path.stdout).trim().to_string();
+    assert!(!git_bin.is_empty(), "git must exist for fixtures");
+    std::os::unix::fs::symlink(&git_bin, bindir.join("git")).expect("link git");
+    let (c, out) = run_with_env(
+        &dir,
+        ["search", "console.log($A)", "--structure"],
+        &bindir.to_string_lossy(),
+        &[],
+    );
+    assert_eq!(c, 3, "missing required tool must be exit 3: {out}");
+}
+
 #[test]
 fn literal_search_prefers_verified_tgrep_backend() {
     // Without tgrep the router degrades to rg/git grep (covered elsewhere).

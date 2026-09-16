@@ -83,29 +83,29 @@ fn broken_path_refs(root: &Path, patterns_path: &Path) -> Vec<String> {
     broken
 }
 
-/// Parse `tgrep status` into a one-line summary. None when status fails.
+/// Parse `tgrep status` into a one-line summary. None when status fails,
+/// times out, or prints anything but a real index report — notably the
+/// exit-0 "No index found" message, which must degrade to the corrupt-index
+/// warning instead of a healthy Ok with `?` placeholders.
 fn tgrep_status_summary(root: &Path) -> Option<String> {
-    let out = std::process::Command::new("tgrep")
-        .args(["status", "."])
-        .current_dir(root)
-        .output()
-        .ok()?;
-    if out.status.success() {
-        let text = String::from_utf8_lossy(&out.stdout);
-        let mut files = "?";
-        let mut server = "?";
-        for line in text.lines() {
-            let line = line.trim();
-            if let Some(rest) = line.strip_prefix("Files:") {
-                files = rest.trim();
-            } else if let Some(rest) = line.strip_prefix("Server:") {
-                server = rest.trim();
-            }
-        }
-        Some(format!("{files} files indexed, server: {server}"))
-    } else {
-        None
+    let mut cmd = std::process::Command::new("tgrep");
+    cmd.args(["status", "."]).current_dir(root);
+    let out = crate::output::command_output(cmd, 15)?;
+    if !out.status.success() {
+        return None;
     }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut files: Option<String> = None;
+    let mut server: Option<String> = None;
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("Files:") {
+            files = Some(rest.trim().to_string());
+        } else if let Some(rest) = line.strip_prefix("Server:") {
+            server = Some(rest.trim().to_string());
+        }
+    }
+    Some(format!("{} files indexed, server: {}", files?, server?))
 }
 
 pub fn run_doctor(root: &Path) -> Vec<Diagnostic> {

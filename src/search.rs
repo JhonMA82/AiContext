@@ -55,11 +55,10 @@ fn parse_grep_lines(output: &str) -> Vec<TextHit> {
 }
 
 fn run_backend(root: &Path, program: &str, args: &[String]) -> Option<Vec<TextHit>> {
-    let out = Command::new(program)
-        .args(args)
-        .current_dir(root)
-        .output()
-        .ok()?;
+    // Text backends answer in seconds; 30s keeps `search` bounded on huge repos.
+    let mut cmd = Command::new(program);
+    cmd.args(args).current_dir(root);
+    let out = crate::output::command_output(cmd, 30)?;
     // grep-likes exit 1 on no matches — still usable output.
     if out.status.success() || out.status.code() == Some(1) {
         Some(parse_grep_lines(&String::from_utf8_lossy(&out.stdout)))
@@ -69,21 +68,25 @@ fn run_backend(root: &Path, program: &str, args: &[String]) -> Option<Vec<TextHi
 }
 
 /// Literal search with graceful degradation: tgrep -> rg -> git grep.
-/// Returns the backend name and hits.
+/// All three backends run in fixed-strings mode so `--text` (the default)
+/// is truly literal: a query like `a.b` never matches `axb`.
 fn literal_search(root: &Path, query: &str) -> (String, Vec<TextHit>) {
     // Verified against Microsoft tgrep 1.x: `search -n` emits ripgrep-style
     // path:line:text and works without a prebuilt index (uses it when present).
     if crate::tools::detect_tool("tgrep").available {
-        let args = ["search", "-n", "--color", "never", "-e", query, "--", "."]
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
+        let args = [
+            "search", "-F", "-n", "--color", "never", "-e", query, "--", ".",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
         if let Some(hits) = run_backend(root, "tgrep", &args) {
             return ("tgrep".to_string(), hits);
         }
     }
     if crate::tools::detect_tool("rg").available {
         let args = [
+            "--fixed-strings",
             "--line-number",
             "--no-heading",
             "--color",
@@ -102,14 +105,26 @@ fn literal_search(root: &Path, query: &str) -> (String, Vec<TextHit>) {
             return ("rg".to_string(), hits);
         }
     }
-    let args = ["grep", "-n", "-I", "--no-color", "-e", query, "--", "."]
-        .iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>();
+    let args = [
+        "grep",
+        "-F",
+        "-n",
+        "-I",
+        "--no-color",
+        "-e",
+        query,
+        "--",
+        ".",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect::<Vec<_>>();
     // git grep runs from anywhere inside the repo; anchor at root.
-    let out = Command::new("git").arg("-C").arg(root).args(&args).output();
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(root).args(&args);
+    let out = crate::output::command_output(cmd, 30);
     match out {
-        Ok(o) if o.status.success() || o.status.code() == Some(1) => (
+        Some(o) if o.status.success() || o.status.code() == Some(1) => (
             "git grep".to_string(),
             parse_grep_lines(&String::from_utf8_lossy(&o.stdout)),
         ),
@@ -154,10 +169,16 @@ fn structural_search(root: &Path, pattern: &str) -> Result<Vec<TextHit>> {
         )
         .into());
     }
-    let out = Command::new("ast-grep")
-        .args(["run", "--pattern", pattern, "--json", "."])
-        .current_dir(root)
-        .output()?;
+    let mut cmd = Command::new("ast-grep");
+    cmd.args(["run", "--pattern", pattern, "--json", "."])
+        .current_dir(root);
+    let out = crate::output::command_output(cmd, 30).ok_or_else(|| {
+        crate::output::AiError::new(
+            "TOOL_TIMEOUT",
+            "ast-grep did not respond within 30s; --structure needs it healthy",
+            Some("retry the search or check the ast-grep installation"),
+        )
+    })?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     // Format: [{file, range: {start: {line (0-based)}}}, lines, ...].
     // Be liberal: try a JSON array, then JSON-lines.
@@ -202,6 +223,8 @@ enum Impact {
     Graph(Vec<TextHit>),
     /// Binary present but the query failed (usually: index not built yet).
     NoIndex,
+    /// Binary present but wedged: degraded like NoBinary, without blaming the index.
+    Timeout,
     /// Binary absent; the caller degrades to text search.
     NoBinary,
 }
@@ -210,12 +233,14 @@ enum Impact {
 /// Read-only: never builds an index; a missing index reports NoIndex.
 fn codegraph_impact(root: &Path, symbol: &str) -> Impact {
     if crate::tools::detect_tool("codegraph").available {
-        let out = Command::new("codegraph")
-            .args(["impact", symbol, "--json"])
-            .current_dir(root)
-            .output();
+        let mut cmd = Command::new("codegraph");
+        cmd.args(["impact", symbol, "--json"]).current_dir(root);
+        // Timeout degrades without blaming the index (see Timeout arm).
+        let Some(out) = crate::output::command_output(cmd, 30) else {
+            return Impact::Timeout;
+        };
         match out {
-            Ok(o) if o.status.success() => {
+            o if o.status.success() => {
                 let mut hits = Vec::new();
                 let parsed: Option<serde_json::Value> =
                     serde_json::from_str(&String::from_utf8_lossy(&o.stdout)).ok();
@@ -287,7 +312,7 @@ pub fn cmd_search(
                     ),
                 )
             }
-            Impact::NoBinary => {
+            Impact::Timeout | Impact::NoBinary => {
                 let (backend, hits) = literal_search(&root, &query);
                 (
                     backend,

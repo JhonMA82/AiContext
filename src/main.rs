@@ -21,7 +21,16 @@ fn main() {
         Ok(code) => code,
         Err(e) => {
             output::print_error(&e, false);
-            5
+            // Spec §39: a missing required tool is exit 3, distinct from
+            // generic failures (5). Any other error keeps 5.
+            let missing_tool = e
+                .downcast_ref::<output::AiError>()
+                .is_some_and(|a| a.code() == "MISSING_REQUIRED_TOOL");
+            if missing_tool {
+                3
+            } else {
+                5
+            }
         }
     };
     std::process::exit(code);

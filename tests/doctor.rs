@@ -16,6 +16,72 @@ fn run<const N: usize>(dir: &Path, args: [&str; N]) -> (i32, String) {
     (out.status.code().unwrap_or(255), text)
 }
 
+fn run_with_path<const N: usize>(dir: &Path, args: [&str; N], path: String) -> (i32, String) {
+    let out = Command::new(bin())
+        .args(args)
+        .current_dir(dir)
+        .env("PATH", path)
+        .output()
+        .expect("run aicontext");
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    (out.status.code().unwrap_or(255), text)
+}
+
+#[test]
+fn doctor_warns_on_unindexed_tgrep_dir() {
+    let dir = fixture_repo("node-single");
+    let (c, _) = run(&dir, ["init", "--non-interactive"]);
+    assert_eq!(c, 0);
+    // A .tgrep/ dir whose `status` prints the exit-0 "No index found" message
+    // (real tgrep 1.x behavior) must warn, never report a healthy Ok.
+    std::fs::create_dir_all(dir.join(".tgrep")).unwrap();
+    let bindir = dir.join("shim-bin");
+    std::fs::create_dir_all(&bindir).unwrap();
+    let script = r#"#!/bin/sh
+if [ "$1" = "--version" ]; then echo "tgrep test-0.0.0"; exit 0; fi
+echo "No index found at ./.tgrep"
+echo "Run `tgrep index .` to build one."
+exit 0
+"#;
+    std::fs::write(bindir.join("tgrep"), script).expect("shim");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let path = bindir.join("tgrep");
+        let mut perms = std::fs::metadata(&path).expect("meta").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).expect("chmod");
+    }
+    let path = format!(
+        "{}:{}",
+        bindir.to_string_lossy(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let (cd, out) = run_with_path(&dir, ["doctor", "--json"], path);
+    assert_eq!(cd, 0, "a warning must not fail doctor: {out}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let diag = v
+        .get("diagnostics")
+        .and_then(|d| d.as_array())
+        .and_then(|ds| {
+            ds.iter()
+                .find(|d| d.get("name").and_then(|n| n.as_str()) == Some("tgrep index"))
+        })
+        .expect("doctor must include tgrep index");
+    assert_eq!(diag.get("status").and_then(|s| s.as_str()), Some("warn"));
+    assert!(
+        diag.get("detail")
+            .and_then(|d| d.as_str())
+            .unwrap_or("")
+            .contains("corrupt"),
+        "detail must admit a corrupt index: {}",
+        diag.get("detail")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null)
+    );
+}
+
 fn git<const N: usize>(dir: &Path, args: [&str; N]) {
     let st = Command::new("git")
         .args(args)
@@ -72,12 +138,14 @@ fn doctor_healthy_json_contract() {
     let v: serde_json::Value = serde_json::from_str(&out).expect("doctor --json must be JSON");
     assert_eq!(v["schema"], "aicontext/doctor/v1");
     assert_eq!(v["healthy"], true);
-    let names: Vec<&str> = v["diagnostics"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|d| d["name"].as_str())
-        .collect();
+    let mut names: Vec<&str> = Vec::new();
+    if let Some(ds) = v.get("diagnostics").and_then(|d| d.as_array()) {
+        for d in ds {
+            if let Some(n) = d.get("name").and_then(|n| n.as_str()) {
+                names.push(n);
+            }
+        }
+    }
     for expected in ["cli", "git", "config", "state markers", "ast-grep"] {
         assert!(names.contains(&expected), "missing diagnostic {expected}");
     }
@@ -91,15 +159,21 @@ fn doctor_flags_uninitialized_with_remediation() {
     assert_eq!(c, 1, "doctor must fail when repo is not initialized");
     let v: serde_json::Value = serde_json::from_str(&out).expect("doctor --json must be JSON");
     assert_eq!(v["healthy"], false);
-    let config = v["diagnostics"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|d| d["name"] == "config")
+    let config = v
+        .get("diagnostics")
+        .and_then(|d| d.as_array())
+        .and_then(|ds| {
+            ds.iter()
+                .find(|d| d.get("name").and_then(|n| n.as_str()) == Some("config"))
+        })
         .expect("doctor must include a config diagnostic");
-    assert_eq!(config["status"], "fail");
+    assert_eq!(config.get("status").and_then(|s| s.as_str()), Some("fail"));
     assert!(
-        config["remediation"].as_str().unwrap().contains("init"),
+        config
+            .get("remediation")
+            .and_then(|r| r.as_str())
+            .unwrap_or("")
+            .contains("init"),
         "remediation must point at init"
     );
 }
@@ -119,12 +193,18 @@ fn doctor_warns_on_broken_patterns_refs() {
     // Broken refs are a warning, not a failure.
     assert_eq!(cd, 0, "broken refs warn only: {out}");
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-    let refs = v["diagnostics"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|d| d["name"] == "patterns refs")
+    let refs = v
+        .get("diagnostics")
+        .and_then(|d| d.as_array())
+        .and_then(|ds| {
+            ds.iter()
+                .find(|d| d.get("name").and_then(|n| n.as_str()) == Some("patterns refs"))
+        })
         .expect("doctor must include patterns refs");
-    assert_eq!(refs["status"], "warn");
-    assert!(refs["detail"].as_str().unwrap().contains("does-not-exist"));
+    assert_eq!(refs.get("status").and_then(|s| s.as_str()), Some("warn"));
+    assert!(refs
+        .get("detail")
+        .and_then(|d| d.as_str())
+        .unwrap_or("")
+        .contains("does-not-exist"));
 }

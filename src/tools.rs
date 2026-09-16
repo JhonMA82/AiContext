@@ -10,7 +10,10 @@ pub struct ToolInfo {
 }
 
 fn probe(program: &str) -> Option<String> {
-    let out = Command::new(program).arg("--version").output().ok()?;
+    // Version probes must never hang the caller: 10s is generous for --version.
+    let mut cmd = Command::new(program);
+    cmd.arg("--version");
+    let out = crate::output::command_output(cmd, 10)?;
     if !out.status.success() {
         return None;
     }
@@ -352,7 +355,9 @@ pub fn cmd_status(json: bool) -> anyhow::Result<i32> {
 /// Health check for the RTK name-collision trap: a different package named
 /// `rtk` exists, so `rtk gain` must succeed for Rust Token Killer.
 pub fn rtk_health() -> Option<String> {
-    let out = Command::new("rtk").arg("gain").output().ok()?;
+    let mut cmd = Command::new("rtk");
+    cmd.arg("gain");
+    let out = crate::output::command_output(cmd, 10)?;
     if out.status.success() {
         None
     } else {
