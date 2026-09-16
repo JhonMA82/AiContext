@@ -46,7 +46,8 @@ pub fn run_check(root: &Path, json: bool) -> Result<i32> {
                     match scan::collect_scan(root) {
                         Ok(report) => {
                             let fresh = crate::state::generated_block(&report);
-                            let stale = fresh.trim() != current_generated(&text);
+                            let stale = crate::state::freshness_key(&fresh)
+                                != crate::state::freshness_key(&current_generated(&text));
                             findings.push(Finding {
                                 name: "freshness".to_string(),
                                 passed: !stale,

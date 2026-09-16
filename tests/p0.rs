@@ -103,14 +103,46 @@ fn sync_preserves_curated_block() {
 }
 
 #[test]
-fn check_detects_drift_after_new_commit() {
+fn empty_commit_keeps_state_fresh() {
+    // Regression: the generated block pins `Last synchronized commit`, so any
+    // new commit — even one that changes no scanned facts — flipped freshness
+    // to stale, and `check` could never pass on a committed tree. The commit
+    // pointer is provenance, not drift: only scanned facts count.
+    let dir = fixture_repo("node-single");
+    let (c, _) = run(&dir, ["init", "--non-interactive"]);
+    assert_eq!(c, 0);
+    let (cs, _) = run(&dir, ["sync"]);
+    assert_eq!(cs, 0);
+    // An empty commit moves HEAD without touching any scanned fact: the tree
+    // (tracked set, contents) is identical, so freshness must hold.
+    git(&dir, ["commit", "-qm", "empty", "--allow-empty"]);
+    let (cc, out) = run(&dir, ["sync", "--check"]);
+    assert_eq!(cc, 0, "content-less commit must stay fresh: {out}");
+    let (ck, cout) = run(&dir, ["check", "--json"]);
+    assert_eq!(ck, 0, "check must pass on fresh tree: {cout}");
+    let v: serde_json::Value = serde_json::from_str(&cout).expect("check --json must be JSON");
+    let fresh = v
+        .get("findings")
+        .and_then(|f| f.as_array())
+        .and_then(|fs| {
+            fs.iter()
+                .find(|f| f.get("name").and_then(|n| n.as_str()) == Some("freshness"))
+        })
+        .expect("check must include a freshness finding");
+    assert_eq!(fresh.get("passed").and_then(|p| p.as_bool()), Some(true));
+}
+
+#[test]
+fn check_detects_drift_after_source_change() {
     let dir = fixture_repo("rust-single");
     // rust fixture has no package.json; default version source is missing,
     // so init's trailing check may fail — init itself must still generate files.
     let _ = run(&dir, ["init", "--non-interactive"]);
     assert!(dir.join(".engineering/aicontext.toml").exists());
-    // Add a commit: generated HEAD goes stale.
-    std::fs::write(dir.join("NEWFILE.md"), "# new\n").unwrap();
+    let (cs0, _) = run(&dir, ["sync"]);
+    assert_eq!(cs0, 0);
+    // A new source file changes scanned facts (file count / LOC): genuine drift.
+    std::fs::write(dir.join("src/extra.rs"), "pub fn extra() {}\n").unwrap();
     git(&dir, ["add", "-A"]);
     git(&dir, ["commit", "-qm", "second"]);
     let (cc, out) = run(&dir, ["sync", "--check"]);
@@ -127,19 +159,35 @@ fn scan_json_contract() {
     let (c, out) = run(&dir, ["scan", "--json"]);
     assert_eq!(c, 0);
     let v: serde_json::Value = serde_json::from_str(&out).expect("scan --json must be JSON");
-    assert_eq!(v["schema"], "aicontext/scan/v1");
-    assert!(v["git"]["tracked_files"].as_u64().unwrap() >= 3);
-    let managers: Vec<&str> = v["packages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|p| p["manager"].as_str())
-        .collect();
+    assert_eq!(
+        v.get("schema").and_then(|s| s.as_str()),
+        Some("aicontext/scan/v1")
+    );
+    assert!(
+        v.get("git")
+            .and_then(|g| g.get("tracked_files"))
+            .and_then(|t| t.as_u64())
+            .unwrap_or(0)
+            >= 3
+    );
+    let managers: Vec<&str> = v
+        .get("packages")
+        .and_then(|p| p.as_array())
+        .map(|ps| {
+            ps.iter()
+                .filter_map(|p| p.get("manager").and_then(|m| m.as_str()))
+                .collect()
+        })
+        .unwrap_or_default();
     assert!(
         managers.contains(&"npm"),
         "bun-monorepo fixture must detect npm manifest, got {managers:?}"
     );
-    assert!(v["complexity"]["profile"].as_str().is_some());
+    assert!(v
+        .get("complexity")
+        .and_then(|c| c.get("profile"))
+        .and_then(|p| p.as_str())
+        .is_some());
 }
 
 #[test]

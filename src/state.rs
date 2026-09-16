@@ -82,6 +82,19 @@ pub(crate) fn generated_block(report: &ScanReport) -> String {
     s
 }
 
+/// Freshness key for drift comparison: the generated block minus the
+/// `Last synchronized commit:` line. That line is provenance (which commit
+/// was HEAD when `sync` ran), not a scanned fact — comparing it makes every
+/// commit, including the one carrying the synced state, report stale forever.
+pub(crate) fn freshness_key(block: &str) -> String {
+    block
+        .trim()
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("Last synchronized commit:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn render_project_state(generated: &str, curated: Option<&str>) -> String {
     format!(
         "# Project State\n\n{GEN_START}\n{generated}{GEN_END}\n\n{CUR_START}\n{curated}{CUR_END}\n",
@@ -186,7 +199,7 @@ pub fn cmd_sync(check_only: bool, json: bool) -> Result<i32> {
     let report = scan::collect_scan(&root)?;
     let fresh_generated = generated_block(&report);
     let current_generated = extract_generated(&existing).unwrap_or_default();
-    let drift = current_generated.trim() != fresh_generated.trim();
+    let drift = freshness_key(&current_generated) != freshness_key(&fresh_generated);
 
     if check_only {
         if json {
@@ -251,7 +264,7 @@ pub fn cmd_status(json: bool) -> Result<i32> {
                 .ok()
                 .as_deref()
                 .and_then(extract_generated)
-                .map(|g| g.trim() != generated_block(&report).trim())
+                .map(|g| freshness_key(&g) != freshness_key(&generated_block(&report)))
                 .unwrap_or(true);
             (if stale { "stale" } else { "synchronized" }, "unknown")
         }
