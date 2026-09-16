@@ -1,3 +1,4 @@
+mod adapters;
 mod agent;
 mod check;
 mod cli;

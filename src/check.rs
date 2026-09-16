@@ -146,6 +146,16 @@ pub fn run_check(root: &Path, json: bool) -> Result<i32> {
             .unwrap_or_else(|| "absent — structural search degraded".to_string()),
     });
 
+    // 10. project adapters (P4): evidence only — an optional tool never
+    // blocks the repo (spec §29), so these findings always pass.
+    for a in crate::adapters::run_all(root) {
+        findings.push(Finding {
+            name: format!("adapter:{}", a.tool),
+            passed: true,
+            detail: format!("[{}] {}", a.state, a.detail),
+        });
+    }
+
     let failed: Vec<&Finding> = findings.iter().filter(|f| !f.passed).collect();
     let code = if failed.is_empty() { 0 } else { 1 };
 

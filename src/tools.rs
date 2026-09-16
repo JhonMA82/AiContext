@@ -181,6 +181,19 @@ pub(crate) fn build_plan(root: &std::path::Path) -> Vec<PlanSection> {
             Some("npm install --save-dev knip (never global by default)"),
             false,
         ));
+        let dc_reason = match crate::adapters::depcruiser_config_name(root) {
+                Some(cfg) => format!(
+                    "boundaries configured ({cfg}): module/layer rules as evidence (project-local, never auto-fix)"
+                ),
+                None => "JS/TS without boundaries config: formalize only if worth it (project-local, never auto-fix)".to_string(),
+            };
+        adapters.push(entry(
+            "dependency-cruiser",
+            "adapter",
+            &dc_reason,
+            Some("npm install --save-dev dependency-cruiser (never global by default)"),
+            false,
+        ));
     }
     if root.join("docs").exists() || is_docs_heavy(root, &report) {
         adapters.push(entry(
