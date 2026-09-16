@@ -133,6 +133,28 @@ fn empty_commit_keeps_state_fresh() {
 }
 
 #[test]
+fn sync_converges_when_block_grows() {
+    // Regression: the scan measured `.engineering/` itself (md/toml/yaml count
+    // as source), so whenever sync grew the generated block (e.g. a new
+    // `Important paths` line), the rewritten state file added a LOC line and
+    // the next check was stale by construction. Tool bookkeeping is not
+    // product code: sync must converge.
+    let dir = fixture_repo("node-single");
+    let (c, _) = run(&dir, ["init", "--non-interactive"]);
+    assert_eq!(c, 0);
+    let (cs, _) = run(&dir, ["sync"]);
+    assert_eq!(cs, 0);
+    // A new product doc grows the generated block by one `Important paths` line.
+    std::fs::write(dir.join("CHANGELOG.md"), "# Changelog\n").unwrap();
+    git(&dir, ["add", "-A"]);
+    git(&dir, ["commit", "-qm", "docs"]);
+    let (cs2, _) = run(&dir, ["sync"]);
+    assert_eq!(cs2, 0);
+    let (cc, out) = run(&dir, ["sync", "--check"]);
+    assert_eq!(cc, 0, "sync must converge after growing the block: {out}");
+}
+
+#[test]
 fn check_detects_drift_after_source_change() {
     let dir = fixture_repo("rust-single");
     // rust fixture has no package.json; default version source is missing,

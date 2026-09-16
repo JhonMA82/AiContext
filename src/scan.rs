@@ -116,7 +116,7 @@ fn language_of(path: &str) -> Option<&'static str> {
 }
 
 fn is_excluded(path: &str) -> bool {
-    const EXCLUDED: [&str; 11] = [
+    const EXCLUDED: [&str; 12] = [
         "node_modules/",
         "target/",
         "dist/",
@@ -125,6 +125,10 @@ fn is_excluded(path: &str) -> bool {
         ".git/",
         ".aicontext/",
         ".tgrep/",
+        // Tool-managed state is bookkeeping, not product code. Measuring it
+        // makes sync self-invalidating: rewriting the state file changes the
+        // measured LOC whenever the block changes size.
+        ".engineering/",
         "__pycache__/",
         ".venv/",
         "venv/",
