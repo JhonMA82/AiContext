@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::config::{
     self, RepoConfig, AST_GREP_RULES, CONSISTENCY, PATTERNS, PROJECT_STATE, REPO_MANIFEST,
@@ -44,6 +45,72 @@ fn ensure_gitignore(root: &Path) -> Result<bool> {
     Ok(changed)
 }
 
+/// Deterministic test-function census for the generated block.
+///
+/// Definition: count of lines whose trimmed content starts with `#[test`
+/// in tracked `*.rs` files, split into `src/` (unit) vs `tests/`
+/// (integration). The tracked set comes from `git ls-files '*.rs'` run in
+/// the repo root (available as `git.root` in the scan report), so untracked
+/// files never invalidate freshness. Paths under `.git/`, `target/` or
+/// `.engineering/` are skipped (same exclusion spirit as the scan); the
+/// list is sorted for determinism and unreadable or oversize (>1MB,
+/// likely generated) files are skipped. Only `src/` and `tests/` prefixed
+/// paths contribute to the counts.
+fn count_test_functions(root: &str) -> (usize, usize) {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "*.rs"])
+        .output();
+    let out = match out {
+        Ok(o) => o,
+        Err(_) => return (0, 0),
+    };
+    if out.status.success() {
+    } else {
+        return (0, 0);
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let mut files: Vec<&str> = stdout.lines().collect();
+    files.sort();
+    let root_path = Path::new(root);
+    let mut unit = 0usize;
+    let mut integration = 0usize;
+    for rel in files {
+        if rel.contains(".git/") || rel.contains("target/") || rel.contains(".engineering/") {
+            continue;
+        }
+        let is_unit = rel.starts_with("src/");
+        let is_integration = rel.starts_with("tests/");
+        if is_unit || is_integration {
+        } else {
+            continue;
+        }
+        let full = root_path.join(rel);
+        let oversize = match std::fs::metadata(&full) {
+            Ok(m) => m.len() > 1_000_000,
+            Err(_) => continue,
+        };
+        if oversize {
+            continue;
+        }
+        let text = match std::fs::read_to_string(&full) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        let n = text
+            .lines()
+            .filter(|l| l.trim_start().starts_with("#[test"))
+            .count();
+        if is_unit {
+            unit += n;
+        } else {
+            integration += n;
+        }
+    }
+    (unit, integration)
+}
+
 pub(crate) fn generated_block(report: &ScanReport) -> String {
     let mut s = String::new();
     s.push_str(&format!(
@@ -67,12 +134,22 @@ pub(crate) fn generated_block(report: &ScanReport) -> String {
         "Source files: {} | LOC: ~{}\n",
         report.complexity.source_files, report.complexity.loc
     ));
-    s.push_str("\nImportant paths:\n");
+    let (unit_tests, integration_tests) = count_test_functions(&report.git.root);
+    s.push_str(&format!(
+        "Test functions: {} (src: {}, tests: {})\n",
+        unit_tests + integration_tests,
+        unit_tests,
+        integration_tests
+    ));
+    // Blank line before each list: markdownlint (MD032) inserts one
+    // anyway, and any post-sync reformat would invalidate freshness.
+    // The generator must emit lint-stable markdown so sync converges.
+    s.push_str("\nImportant paths:\n\n");
     for d in &report.docs {
         s.push_str(&format!("- {d}\n"));
     }
     if !report.commands.is_empty() {
-        s.push_str("\nCommands:\n");
+        s.push_str("\nCommands:\n\n");
         let mut cmds = report.commands.clone();
         cmds.sort();
         for c in cmds.iter().take(20) {
@@ -136,10 +213,16 @@ pub fn cmd_init(profile: Option<String>, _non_interactive: bool, json: bool) -> 
         let name = repo_name_from_root(&root);
         std::fs::write(&manifest_path, config::minimal_toml(&name, &profile))?;
     }
-    // consistency.yml stub.
+    // Scan first: PROJECT_STATE and consistency.yml are both seeded from
+    // detected facts, so a fresh `init` passes `check` and later drift fails.
+    let report = scan::collect_scan(&root)?;
+    // consistency.yml stub — never overwrite an existing manifest.
     let consistency_path = root.join(CONSISTENCY);
     if !consistency_path.exists() {
-        std::fs::write(&consistency_path, config::minimal_consistency())?;
+        std::fs::write(
+            &consistency_path,
+            config::minimal_consistency(&report.commands),
+        )?;
     }
     // PATTERNS.md placeholder (semantic content belongs to the skill).
     let patterns_path = root.join(PATTERNS);
@@ -150,7 +233,6 @@ pub fn cmd_init(profile: Option<String>, _non_interactive: bool, json: bool) -> 
         )?;
     }
     // PROJECT_STATE.md — preserve curated, refresh generated.
-    let report = scan::collect_scan(&root)?;
     let state_path = root.join(PROJECT_STATE);
     let curated = std::fs::read_to_string(&state_path)
         .ok()

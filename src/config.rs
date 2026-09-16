@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 pub const REPO_MANIFEST: &str = ".engineering/aicontext.toml";
@@ -80,6 +81,75 @@ pub struct ConsistencySection {
     pub manifest: String,
 }
 
+/// Typed view of `.engineering/consistency.yml` (`aicontext/consistency/v1`).
+///
+/// Semantics enforced by `check`:
+/// - `version.projections`: files that must literally contain the version
+///   resolved from `version.source` (e.g. `CHANGELOG.md` pins `0.1.0`).
+/// - `commands.documented`: command names that must match the detected
+///   scripts exactly — no missing entries, no stale ones.
+/// - `protected`: paths that must exist (presence gate; content review
+///   stays human).
+/// - `checks.ast_grep.rules`: directory of ast-grep rule files that `check`
+///   executes; any match is a violation.
+/// - `adapters.<tool>.policy`: `required` turns that evidence-only adapter
+///   finding into a gate (only a clean executed run passes); default is
+///   `advisory` (finding always passes, evidence shown in detail).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ConsistencyFile {
+    #[serde(default)]
+    pub schema: String,
+    #[serde(default)]
+    pub version: ConsistencyVersion,
+    #[serde(default)]
+    pub commands: ConsistencyCommands,
+    #[serde(default)]
+    pub protected: Vec<String>,
+    #[serde(default)]
+    pub checks: ConsistencyChecks,
+    #[serde(default)]
+    pub adapters: BTreeMap<String, AdapterPolicy>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ConsistencyVersion {
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub projections: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ConsistencyCommands {
+    #[serde(default)]
+    pub documented: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ConsistencyChecks {
+    #[serde(default)]
+    pub ast_grep: AstGrepChecks,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AstGrepChecks {
+    #[serde(default = "default_ast_grep_rules")]
+    pub rules: String,
+}
+
+fn default_ast_grep_rules() -> String {
+    AST_GREP_RULES.to_string()
+}
+
+/// Per-adapter enforcement declared under `adapters:` in consistency.yml.
+/// `policy` stays a plain string so `check` can fail closed with a clear
+/// message on anything other than `required` / `advisory`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AdapterPolicy {
+    #[serde(default)]
+    pub policy: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RepositorySection {
     #[serde(default)]
@@ -159,6 +229,19 @@ impl RepoConfig {
     }
 }
 
+impl ConsistencyFile {
+    pub fn load(root: &Path, manifest: &str) -> anyhow::Result<Self> {
+        let text = std::fs::read_to_string(root.join(manifest))
+            .map_err(|_| anyhow::anyhow!("missing {manifest}"))?;
+        let file: Self = serde_yaml::from_str(&text)
+            .map_err(|e| anyhow::anyhow!("invalid YAML in {manifest}: {e}"))?;
+        if file.schema != "aicontext/consistency/v1" {
+            anyhow::bail!("unsupported consistency schema: {}", file.schema);
+        }
+        Ok(file)
+    }
+}
+
 pub fn minimal_toml(project_name: &str, profile: &str) -> String {
     format!(
         r#"schema = "aicontext/v1"
@@ -194,15 +277,30 @@ manifest = "{CONSISTENCY}"
     )
 }
 
-pub fn minimal_consistency() -> String {
+pub fn minimal_consistency(commands: &[String]) -> String {
+    let mut sorted = commands.to_vec();
+    sorted.sort();
+    let documented = if sorted.is_empty() {
+        "  documented: []\n".to_string()
+    } else {
+        let mut s = "  documented:\n".to_string();
+        for c in &sorted {
+            s.push_str(&format!("    - {c}\n"));
+        }
+        s
+    };
     format!(
-        r#"schema: aicontext/consistency/v1
+        r#"# Consistency declarations (`aicontext check` enforces them).
+# - version.projections: files that must contain the resolved version.
+# - commands.documented: must match detected scripts exactly (init seeds it).
+# - protected: paths that must exist. Empty lists enforce nothing.
+# - checks.ast_grep.rules: rule files executed by `check`; a match fails.
+schema: aicontext/consistency/v1
 version:
   source: package.json
   projections: []
 commands:
-  documented: []
-protected: []
+{documented}protected: []
 checks:
   ast_grep:
     rules: {AST_GREP_RULES}

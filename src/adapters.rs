@@ -2,8 +2,11 @@
 //!
 //! Conceptual interface per spec §63: detect -> applicability,
 //! plan -> recommendation (`tools plan`), check -> findings (this module).
-//! Findings are evidence only: they never fail `check` (spec §29 — an
-//! optional tool never blocks a repo without explicit configuration).
+//! Findings are evidence only by default: they never fail `check` (spec
+//! §29 — an optional tool never blocks a repo without explicit
+//! configuration). Declaring `adapters.<tool>.policy = "required"` in
+//! consistency.yml opts that adapter into a real gate: only a clean
+//! executed run passes (see [`KNOWN_ADAPTERS`]).
 //!
 //! All runners are read-only and offline-first:
 //! - knip runs project-local (`knip --reporter json --no-exit-code`);
@@ -71,6 +74,10 @@ fn md_file_count(report: &crate::scan::ScanReport) -> usize {
         .map(|l| l.files)
         .sum()
 }
+
+/// Adapter names accepted in the `adapters` table of consistency.yml.
+/// Unknown names fail `check` closed (typo protection).
+pub const KNOWN_ADAPTERS: &[&str] = &["knip", "dependency-cruiser", "lychee", "zizmor"];
 
 /// Run every adapter that applies to this repo. Never fails: each outcome
 /// carries its own state (`ok`, `issues`, `missing`, `unconfigured`, `error`).
