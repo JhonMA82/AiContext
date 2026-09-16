@@ -75,6 +75,12 @@ pub enum Command {
         #[command(subcommand)]
         cmd: AgentCommand,
     },
+    /// Self-management: update or uninstall the aicontext binary itself
+    #[command(name = "self")]
+    SelfMgmt {
+        #[command(subcommand)]
+        cmd: SelfCommand,
+    },
     /// Print shell completions (stdout; wire into your shell init)
     Completion {
         /// Shell to generate completions for
@@ -123,6 +129,32 @@ pub enum ToolsCommand {
         #[arg(long, default_value_t = false)]
         managed: bool,
         /// Skip the interactive confirmation (required in non-tty use)
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SelfCommand {
+    /// Report or install a newer aicontext release (conservative, explicit)
+    Update {
+        /// Only compare versions; never change anything (always safe)
+        #[arg(long, default_value_t = false)]
+        check: bool,
+        /// Required to actually perform an update
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Remove only AIContext-owned state (never foreign files)
+    Uninstall {
+        /// Also remove managed-tools prefix contents from the ownership registry
+        #[arg(long, default_value_t = false)]
+        managed: bool,
+        /// Required to actually remove anything
         #[arg(long, default_value_t = false)]
         yes: bool,
         #[arg(long, default_value_t = false)]

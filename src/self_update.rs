@@ -1,0 +1,494 @@
+use anyhow::{Context, Result};
+use serde::Serialize;
+use std::cmp::Ordering;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+// JSON schema ids emitted by this module (documented here; schemas/ is
+// intentionally not modified):
+// - update (check and perform): "aicontext/self-update/v1"
+// - uninstall: "aicontext/self-uninstall/v1"
+
+const SELF_UPDATE_SCHEMA: &str = "aicontext/self-update/v1";
+const SELF_UNINSTALL_SCHEMA: &str = "aicontext/self-uninstall/v1";
+
+const INSTALLER_CMD: &str = "curl -LsSf https://github.com/JhonMA82/AiContext/releases/latest/download/aicontext-installer.sh | sh";
+const CARGO_INSTALL_CMD: &str = "cargo install aicontext --locked";
+
+fn current_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+fn registry_url() -> String {
+    // AICONTEXT_REGISTRY_URL exists so tests can point discovery at an
+    // unroutable address and exercise the offline path without network.
+    std::env::var("AICONTEXT_REGISTRY_URL")
+        .unwrap_or_else(|_| "https://crates.io/api/v1/crates/aicontext".to_string())
+}
+
+/// Version discovery uses the crates.io API, not the GitHub releases API:
+/// a single JSON document with a stable `crate.max_version` field, no
+/// redirect-following or auth needed, and the same curl-based bounded call
+/// pattern as crate::output::command_output (short max-time plus an outer
+/// deadline, so an unreachable registry degrades instead of hanging).
+fn fetch_latest_version() -> Option<String> {
+    let url = registry_url();
+    let mut cmd = Command::new("curl");
+    cmd.args(["-sS", "--max-time", "5", &url]);
+    let out = crate::output::command_output(cmd, 10)?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    extract_version(&value)
+}
+
+fn extract_version(value: &serde_json::Value) -> Option<String> {
+    let candidates = [
+        value.pointer("/crate/max_version"),
+        value.get("max_version"),
+        value.get("version"),
+        value.get("tag_name"),
+    ];
+    for candidate in candidates.into_iter().flatten() {
+        if let Some(raw) = candidate.as_str() {
+            let cleaned = raw.trim().strip_prefix('v').unwrap_or(raw.trim());
+            if !cleaned.is_empty() {
+                return Some(cleaned.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn numeric_prefix(part: &str) -> u64 {
+    let digits: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse::<u64>().unwrap_or(0)
+}
+
+fn compare_versions(current: &str, latest: &str) -> Ordering {
+    let mut cur = current.split('.');
+    let mut lat = latest.split('.');
+    loop {
+        match (cur.next(), lat.next()) {
+            (None, None) => return Ordering::Equal,
+            (Some(_), None) => return Ordering::Greater,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(a), Some(b)) => {
+                let rank = numeric_prefix(a).cmp(&numeric_prefix(b));
+                if rank == Ordering::Equal {
+                    let tie = a.cmp(b);
+                    if tie == Ordering::Equal {
+                        continue;
+                    }
+                    return tie;
+                }
+                return rank;
+            }
+        }
+    }
+}
+
+fn cargo_present() -> bool {
+    let mut cmd = Command::new("cargo");
+    cmd.args(["--version"]);
+    match crate::output::command_output(cmd, 10) {
+        Some(out) => out.status.success(),
+        None => false,
+    }
+}
+
+fn home_dir() -> Result<PathBuf> {
+    std::env::var("HOME")
+        .map(PathBuf::from)
+        .or_else(|_| std::env::var("USERPROFILE").map(PathBuf::from))
+        .context("neither HOME nor USERPROFILE is set")
+}
+
+fn managed_prefix() -> Result<PathBuf> {
+    Ok(home_dir()?.join(".local").join("share").join("aicontext"))
+}
+
+fn cargo_bin_dir() -> Result<PathBuf> {
+    match std::env::var("CARGO_HOME") {
+        Ok(home) => Ok(PathBuf::from(home).join("bin")),
+        Err(_) => Ok(home_dir()?.join(".cargo").join("bin")),
+    }
+}
+
+fn path_inside(path: &Path, prefix: &Path) -> bool {
+    path.starts_with(prefix)
+}
+
+/// cargo-dist installs leave no queryable receipt on disk, so
+/// dist-managed is only claimed on explicit evidence: an env override or a
+/// receipt file in the managed prefix. Anything else falls through to the
+/// cargo path, and the binary itself is never overwritten in place.
+fn dist_managed_evidence() -> bool {
+    if std::env::var("AICONTEXT_DIST_MANAGED").map(|v| v == "1") == Ok(true) {
+        return true;
+    }
+    match managed_prefix() {
+        Ok(prefix) => prefix.join("install-receipt.json").exists(),
+        Err(_) => false,
+    }
+}
+
+fn binary_inside_managed_prefix(exe: &Path) -> bool {
+    let prefixes: Vec<PathBuf> = [managed_prefix(), cargo_bin_dir()]
+        .into_iter()
+        .filter_map(|r| r.ok())
+        .collect();
+    prefixes.iter().any(|p| path_inside(exe, p))
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct UpdateJson<'a> {
+    schema: &'a str,
+    current: &'a str,
+    latest: Option<&'a str>,
+    up_to_date: Option<bool>,
+    action: &'a str,
+    method: Option<&'a str>,
+    note: &'a str,
+}
+
+pub fn cmd_update(check: bool, yes: bool, json: bool) -> Result<i32> {
+    let current = current_version();
+    if check {
+        return cmd_check(&current, json);
+    }
+    if !yes {
+        let e = crate::output::AiError::new(
+            "INVALID_USAGE",
+            "refusing to update without --yes",
+            Some("aicontext self update --yes"),
+        );
+        crate::output::print_error(&anyhow::anyhow!(e), json);
+        return Ok(2);
+    }
+    let latest = fetch_latest_version();
+    if let Some(ref known) = latest {
+        if compare_versions(&current, known) == Ordering::Greater
+            || compare_versions(&current, known) == Ordering::Equal
+        {
+            let note = format!("already up to date (current {current}, latest {known})");
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&UpdateJson {
+                        schema: SELF_UPDATE_SCHEMA,
+                        current: &current,
+                        latest: latest.as_deref(),
+                        up_to_date: Some(true),
+                        action: "up-to-date",
+                        method: None,
+                        note: &note,
+                    })?
+                );
+                return Ok(0);
+            }
+            println!("{note}");
+            return Ok(0);
+        }
+    }
+    if dist_managed_evidence() {
+        let note = format!(
+            "cargo-dist-managed install detected; rerun the official installer: {INSTALLER_CMD}"
+        );
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&UpdateJson {
+                    schema: SELF_UPDATE_SCHEMA,
+                    current: &current,
+                    latest: latest.as_deref(),
+                    up_to_date: latest
+                        .as_deref()
+                        .map(|l| compare_versions(&current, l) != Ordering::Less),
+                    action: "update",
+                    method: Some("installer"),
+                    note: &note,
+                })?
+            );
+            return Ok(0);
+        }
+        println!("{note}");
+        return Ok(0);
+    }
+    if cargo_present() {
+        let mut cmd = Command::new("cargo");
+        cmd.args(["install", "aicontext", "--locked"]);
+        match crate::output::command_output(cmd, 300) {
+            Some(out) if out.status.success() => {
+                let note = format!("updated via `{CARGO_INSTALL_CMD}`");
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&UpdateJson {
+                            schema: SELF_UPDATE_SCHEMA,
+                            current: &current,
+                            latest: latest.as_deref(),
+                            up_to_date: Some(true),
+                            action: "update",
+                            method: Some("cargo"),
+                            note: &note,
+                        })?
+                    );
+                    return Ok(0);
+                }
+                println!("{note}");
+                return Ok(0);
+            }
+            _ => {
+                let e = crate::output::AiError::new(
+                    "TOOL_EXECUTION_FAILURE",
+                    format!(
+                        "`{CARGO_INSTALL_CMD}` failed; latest known: {}",
+                        latest.as_deref().unwrap_or("unknown (offline?)")
+                    ),
+                    Some(CARGO_INSTALL_CMD),
+                );
+                crate::output::print_error(&anyhow::anyhow!(e), json);
+                return Ok(5);
+            }
+        }
+    }
+    let e = crate::output::AiError::new(
+        "MISSING_REQUIRED_TOOL",
+        "cargo is required for a managed update but was not found",
+        Some(CARGO_INSTALL_CMD),
+    );
+    crate::output::print_error(&anyhow::anyhow!(e), json);
+    Ok(3)
+}
+
+fn cmd_check(current: &str, json: bool) -> Result<i32> {
+    match fetch_latest_version() {
+        Some(latest) => {
+            let newer = compare_versions(current, &latest) == Ordering::Less;
+            let note = if newer {
+                format!("update available (current {current}, latest {latest}); rerun with `--yes` to update")
+            } else {
+                format!("already up to date (current {current}, latest {latest})")
+            };
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&UpdateJson {
+                        schema: SELF_UPDATE_SCHEMA,
+                        current,
+                        latest: Some(&latest),
+                        up_to_date: Some(!newer),
+                        action: "check",
+                        method: None,
+                        note: &note,
+                    })?
+                );
+                return Ok(0);
+            }
+            println!("{note}");
+            Ok(0)
+        }
+        None => {
+            let note = format!(
+                "registry unreachable (offline?); current version {current}, latest unknown — nothing was changed"
+            );
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&UpdateJson {
+                        schema: SELF_UPDATE_SCHEMA,
+                        current,
+                        latest: None,
+                        up_to_date: None,
+                        action: "check",
+                        method: None,
+                        note: &note,
+                    })?
+                );
+                return Ok(0);
+            }
+            println!("{note}");
+            Ok(0)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct UninstallJson<'a> {
+    schema: &'a str,
+    removed: &'a [String],
+    left_alone: &'a [String],
+    note: &'a str,
+}
+
+/// Uninstall scope (owned state only, never foreign files):
+/// 1. The running binary, only when inside a managed prefix or cargo bin
+///    (with --yes); an unidentified location is always left untouched.
+/// 2. With --managed: tool files recorded in the ownership registry
+///    (~/.local/share/aicontext/managed-tools.json), only when they sit
+///    inside the managed prefix, plus the registry file itself.
+/// 3. Agent skills with an AIContext ownership manifest
+///    (~/.pi/agent/skills/aicontext-adopt/.aicontext-managed.json).
+///
+/// Never touched: foreign files, project manifests, .engineering/ dirs.
+pub fn cmd_uninstall(managed: bool, yes: bool, json: bool) -> Result<i32> {
+    if !yes {
+        let e = crate::output::AiError::new(
+            "INVALID_USAGE",
+            "refusing to uninstall without --yes",
+            Some("aicontext self uninstall --managed --yes"),
+        );
+        crate::output::print_error(&anyhow::anyhow!(e), json);
+        return Ok(2);
+    }
+    let mut removed: Vec<String> = Vec::new();
+    let mut left_alone: Vec<String> = Vec::new();
+
+    if let Ok(exe) = std::env::current_exe() {
+        let display = exe.to_string_lossy().to_string();
+        if binary_inside_managed_prefix(&exe) {
+            match std::fs::remove_file(&exe) {
+                Ok(()) => removed.push(format!("binary at {display}")),
+                Err(e) => left_alone.push(format!("binary at {display} (remove failed: {e})")),
+            }
+        } else {
+            left_alone.push(format!(
+                "binary at {display} (outside managed prefix; left untouched)"
+            ));
+        }
+    } else {
+        left_alone.push("binary location unknown; left untouched".to_string());
+    }
+
+    if managed {
+        remove_managed_tools(&mut removed, &mut left_alone)?;
+    } else {
+        left_alone.push("managed tools prefix (pass --managed to remove owned tools)".to_string());
+    }
+
+    remove_owned_skills(&mut removed, &mut left_alone)?;
+
+    let note = "only AIContext-owned state was touched; foreign files, project manifests and .engineering/ dirs were left alone";
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&UninstallJson {
+                schema: SELF_UNINSTALL_SCHEMA,
+                removed: &removed,
+                left_alone: &left_alone,
+                note,
+            })?
+        );
+        return Ok(0);
+    }
+    for r in &removed {
+        println!("removed {r}");
+    }
+    for l in &left_alone {
+        println!("left alone: {l}");
+    }
+    println!("{note}.");
+    Ok(0)
+}
+
+fn remove_managed_tools(removed: &mut Vec<String>, left_alone: &mut Vec<String>) -> Result<()> {
+    let prefix = managed_prefix()?;
+    let registry_file = prefix.join("managed-tools.json");
+    let registry = crate::tools_install::load_registry(&prefix);
+    for entry in &registry.tools {
+        let path = PathBuf::from(&entry.path);
+        if path_inside(&path, &prefix) {
+            if path.exists() {
+                match std::fs::remove_file(&path) {
+                    Ok(()) => {
+                        removed.push(format!("managed tool {} at {}", entry.name, entry.path))
+                    }
+                    Err(e) => left_alone.push(format!(
+                        "managed tool {} at {} (remove failed: {e})",
+                        entry.name, entry.path
+                    )),
+                }
+            } else {
+                removed.push(format!(
+                    "managed tool {} at {} (already absent)",
+                    entry.name, entry.path
+                ));
+            }
+        } else {
+            left_alone.push(format!(
+                "managed tool {} at {} (outside managed prefix; left untouched)",
+                entry.name, entry.path
+            ));
+        }
+    }
+    if registry_file.exists() {
+        std::fs::remove_file(&registry_file)?;
+        removed.push(format!("ownership registry at {}", registry_file.display()));
+    } else {
+        left_alone.push("no ownership registry found".to_string());
+    }
+    Ok(())
+}
+
+fn remove_owned_skills(removed: &mut Vec<String>, left_alone: &mut Vec<String>) -> Result<()> {
+    let dir = home_dir()?
+        .join(".pi")
+        .join("agent")
+        .join("skills")
+        .join("aicontext-adopt");
+    let manifest = dir.join(".aicontext-managed.json");
+    if manifest.exists() {
+        for owned in ["SKILL.md", ".aicontext-managed.json"] {
+            let path = dir.join(owned);
+            if path.exists() {
+                std::fs::remove_file(&path)?;
+                removed.push(format!("owned skill file {}", path.display()));
+            }
+        }
+        match std::fs::remove_dir(&dir) {
+            Ok(()) => removed.push(format!("skill dir {}", dir.display())),
+            Err(_) => left_alone.push(format!(
+                "skill dir {} (foreign files remain; left untouched)",
+                dir.display()
+            )),
+        }
+    } else if dir.join("SKILL.md").exists() {
+        left_alone.push(
+            "skill dir exists without an AIContext ownership manifest; left untouched".to_string(),
+        );
+    } else {
+        left_alone.push("no owned agent skills found".to_string());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_ordering_handles_missing_parts() {
+        if compare_versions("0.1.0", "0.2.0") == Ordering::Less {
+            // expected
+        } else {
+            panic!("0.1.0 must be older than 0.2.0");
+        }
+        assert_eq!(compare_versions("0.1.0", "0.1.0"), Ordering::Equal);
+        assert_eq!(compare_versions("0.2.0", "0.1.9"), Ordering::Greater);
+        assert_eq!(compare_versions("0.1", "0.1.0"), Ordering::Less);
+    }
+
+    #[test]
+    fn extract_version_prefers_crates_shape() {
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"crate":{"max_version":"1.4.2"}}"#).unwrap();
+        assert_eq!(extract_version(&v).as_deref(), Some("1.4.2"));
+        let tagged: serde_json::Value = serde_json::from_str(r#"{"tag_name":"v0.9.0"}"#).unwrap();
+        assert_eq!(extract_version(&tagged).as_deref(), Some("0.9.0"));
+        let empty: serde_json::Value = serde_json::from_str(r#"{"crate":{}}"#).unwrap();
+        assert_eq!(extract_version(&empty), None);
+    }
+}

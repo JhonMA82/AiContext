@@ -7,13 +7,14 @@ mod doctor;
 mod output;
 mod scan;
 mod search;
+mod self_update;
 mod state;
 mod tools;
 mod tools_install;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{AgentCommand, Cli, Command, ToolsCommand};
+use cli::{AgentCommand, Cli, Command, SelfCommand, ToolsCommand};
 
 fn main() {
     let cli = Cli::parse();
@@ -75,6 +76,12 @@ fn run(cli: Cli) -> Result<i32> {
         Command::Agent { cmd } => match cmd {
             AgentCommand::Install { agent, json } => agent::cmd_install(agent, json),
             AgentCommand::Uninstall { agent, json } => agent::cmd_uninstall(agent, json),
+        },
+        Command::SelfMgmt { cmd } => match cmd {
+            SelfCommand::Update { check, yes, json } => self_update::cmd_update(check, yes, json),
+            SelfCommand::Uninstall { managed, yes, json } => {
+                self_update::cmd_uninstall(managed, yes, json)
+            }
         },
         Command::Completion { shell } => {
             use clap::CommandFactory;
