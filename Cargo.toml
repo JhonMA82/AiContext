@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Deterministic repository intelligence CLI (P0 core)"
 license = "MIT"
+repository = "https://github.com/JhonMA82/AiContext"
 
 [[bin]]
 name = "aicontext"
@@ -19,3 +20,8 @@ serde_yaml = "=0.9.34"
 ignore = "=0.4.24"
 anyhow = "=1.0.100"
 thiserror = "=2.0.17"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

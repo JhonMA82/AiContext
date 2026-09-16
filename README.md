@@ -40,3 +40,21 @@ Antes de explorar el repo en profundidad, leer:
 
 Preferir `aicontext search` (futuro) y las referencias declaradas antes que el escaneo amplio.
 Antes de declarar completa una implementación, correr: `aicontext check`.
+
+## Release
+
+Releases con `cargo-dist` (tags SemVer, checksums, instaladores shell/powershell,
+binarios para Linux/macOS/Windows):
+
+```bash
+cargo dist plan    # qué se va a construir
+cargo dist build   # artefactos locales en target/distrib/
+```
+
+Publicar: `git tag vX.Y.Z && git push origin vX.Y.Z` — CI construye
+los 5 targets y publica el GitHub Release con checksums.
+Instalación:
+
+```bash
+curl -LsSf https://github.com/JhonMA82/AiContext/releases/latest/download/aicontext-installer.sh | sh
+```
