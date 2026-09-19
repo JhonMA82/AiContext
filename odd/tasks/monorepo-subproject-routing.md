@@ -196,7 +196,7 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
 ## Progreso
 
 - [x] WU1 detección + `scan/v2` — commit `b5f7347` (`feat: detect monorepo subprojects with scan/v2 contract`)
-- [ ] WU2 router en `AGENTS.md`
+- [x] WU2 router en `AGENTS.md` — commit `f322801` (`feat: render routing blocks in AGENTS.md and subproject table in PROJECT_STATE`)
 - [ ] WU3 `subprojects.yml`
 - [ ] WU4 gates de `check`
 - [ ] WU5 `init --recursive`
@@ -212,9 +212,22 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
   wiring en `main.rs`/`cli.rs`/`Cargo.toml`) que **no** entraron al commit; el TUI vive completo en
   `feat/tui-ratatui` (ea72ecd, RDD aprobado). El `.gitignore` ahora cubre `fixtures/**/target/` y
   `fixtures/**/Cargo.lock` (los artefactos de build del fixture cargo quedaron fuera del commit).
+- WU2 (`f322801`): `cargo test` ⇒ 100 passed (15 suites, 195.02s) — +9 tests de `tests/routing.rs`
+  (idempotencia byte a byte, inserción tras H1, append sin marcadores, bytes de usuario intactos,
+  creación solo con ≥2, escape/clip de celdas, forma lint-estable, drift de `freshness_key` por
+  `purpose`, puntero legacy reportado sin reescribir). `cargo fmt --check` limpio; verificación
+  independiente (`gentle-ai-verify`) PASS sin hallazgos bloqueantes; review nativo
+  `review-3c013172aa99e8d1` (tier medium, 1 lente reliability, 5 archivos, 902 líneas): **APPROVED**,
+  ack quemado. 4 advisorys informacionales como follow-ups (nunca motivo de re-review):
+  `R3-cell-escape-clip` (state.rs:72-76), `R3-check-gate` (state.rs:726), `R3-h1-fence`
+  (state.rs:187-197, SUGGESTION), `R3-init-self-stale` (state.rs:646-651) — evaluar dónde aplican
+  en WU3/WU4. Resolución del worker sobre el contrato: la preview canónica (6 columnas) gana sobre
+  la prosa "7 columnas" (conteo viejo); `SubprojectsFile` minimal tolerante
+  (`aicontext/subprojects/v1` placeholder, solo lectura — WU3 adopta/valida).
 
 ## Próximo paso
 
-WU1 cerrado (`b5f7347`). Siguiente: delegar WU2 (bloques marcados en `AGENTS.md` + tabla en `PROJECT_STATE.md`)
-según el contrato del renderer ya escrito en el doc; verificar (`cargo fmt --check`, `cargo test`) y commitear
-como work unit sobre la rama. PR1 = WU1+WU2+WU6 apunta a `feat/monorepo-subproject-routing`.
+WU2 cerrado (`f322801`, review APPROVED). Siguiente por la cadena aprobada (PR1 = WU1+WU2+WU6): **WU6**
+(`search --in/--subproject` + `status` con adopted/pending, dependencia solo de WU1), que completa el
+PR1. Después PR2 = WU3+WU4+WU5 y PR3 = WU7. Los 3 PRs apuntan a `feat/monorepo-subproject-routing`,
+se mergean en orden y al final un único PR a `master`.
