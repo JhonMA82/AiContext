@@ -6,7 +6,19 @@ const SKILL_NAME: &str = "aicontext-adopt";
 const SKILL_BODY: &str = include_str!("../skills/aicontext-adopt/SKILL.md");
 const MANAGED_MANIFEST: &str = ".aicontext-managed.json";
 
-const AGENTS_POINTER: &str = "## Repository context\n\nBefore broad repository exploration, read:\n- `.engineering/PROJECT_STATE.md`\n- `.engineering/PATTERNS.md`\n\nPrefer `aicontext search` and declared references before broad scanning.\n\nBefore declaring implementation complete, run:\n`aicontext check`\n";
+/// Legacy, unmarked AGENTS.md pointer appended by `agent install`. The
+/// marked context block in `state.rs` wraps exactly this body, and the
+/// router must report — never rewrite — a file that already contains it.
+pub(crate) const AGENTS_POINTER: &str = "## Repository context\n\nBefore broad repository exploration, read:\n- `.engineering/PROJECT_STATE.md`\n- `.engineering/PATTERNS.md`\n\nPrefer `aicontext search` and declared references before broad scanning.\n\nBefore declaring implementation complete, run:\n`aicontext check`\n";
+
+/// True when the pre-marker pointer text is present without the marked
+/// context block. `init`/`sync` must not rewrite or duplicate it: they
+/// report the legacy pointer and place the routing block deterministically.
+pub(crate) fn legacy_pointer_present(text: &str) -> bool {
+    text.contains("## Repository context")
+        && text.contains(".engineering/PROJECT_STATE.md")
+        && !text.contains(crate::state::CONTEXT_START)
+}
 
 fn home_dir() -> Result<PathBuf> {
     std::env::var("HOME")

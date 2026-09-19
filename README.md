@@ -20,6 +20,20 @@ Contratos machine-readable: `schemas/` (`scan-v2`, `check-v1`, `error-v1`).
 contrato archivado) e incluye `subprojects`/`subprojects_source`.
 Fixtures y tests: `fixtures/`, `tests/` (`cargo test`).
 
+## Router de subproyectos (monorepos)
+
+En un repo con ≥2 subproyectos detectados, `init` crea `AGENTS.md` si
+falta, con dos bloques marcados: el de routing apunta a cada subproyecto
+con su contexto de entrada y la tabla de stack, manifest, comandos y
+propósito, y el de contexto mantiene el puntero a `.engineering/`. La
+misma tabla de subproyectos entra en el bloque generado de
+`PROJECT_STATE.md`, así que cambiar el `purpose` declarado en
+`.engineering/subprojects.yml` es drift que `sync` resuelve. `sync`
+refresca solo bloques existentes (nunca crea el archivo ni inserta
+bloques faltantes) y con <2 subproyectos no se renderiza routing. Fuera
+de los marcadores no se edita nada: los cambios manuales se preservan y
+el puntero legacy sin marcadores se reporta sin reescribirse.
+
 ## Gate de consistencia (`check`)
 
 `.engineering/consistency.yml` son declaraciones que `check` verifica

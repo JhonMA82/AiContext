@@ -6,6 +6,23 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ### Agregado
 
+- Router de subproyectos en el `AGENTS.md` raíz: con ≥2 subproyectos
+  detectados, `init` crea el archivo si falta (bloque de contexto + bloque
+  de routing con la tabla `Path/Stack/Manifest/Entry context/Commands/
+  Purpose`, ordenada por path, celdas con `|` escapado, espacios/saltos de
+  línea colapsados, vacío ⇒ `—` y recorte a 120 chars) y `sync` refresca
+  solo los bloques existentes, nunca crea ni inserta. La misma tabla entra
+  en el bloque generado de `PROJECT_STATE.md` (única función de render),
+  así que cambiar el `purpose` en `.engineering/subprojects.yml` es drift
+  que `sync` resuelve. Los bloques viven entre marcadores
+  (`aicontext:routing:*`, `aicontext:context:*`): fuera de la región
+  marcada no se toca un byte, el puntero legacy sin marcadores se reporta
+  (nunca se reescribe ni se duplica) y con <2 subproyectos no se renderiza
+  routing. `tests/routing.rs` (9 tests) cubre idempotencia byte a byte,
+  inserción tras el primer H1, archivo sin heading, bytes de usuario
+  intactos, gate de creación, escapado/recorte, forma estable para el
+  linter, drift de `purpose` y migración del puntero legacy.
+
 - Detección determinista de subproyectos en `scan` + contrato
   `aicontext/scan/v2`: `subprojects` (path, name, kind, manifest, manager,
   commands propios, agents_md, initialized, complexity propia) y
