@@ -6,6 +6,24 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ### Agregado
 
+- Detección determinista de subproyectos en `scan` + contrato
+  `aicontext/scan/v2`: `subprojects` (path, name, kind, manifest, manager,
+  commands propios, agents_md, initialized, complexity propia) y
+  `subprojects_source` (mode, declared, unresolved, containers). Fuentes
+  declaradas: `package.json` workspaces, `pnpm-workspace.yaml`, `Cargo.toml`
+  `[workspace] members` (reemplaza el centinela `"[workspace]"`, que queda
+  solo como fallback), `go.work` `use` y `[subprojects] extra` en
+  `aicontext.toml`. Globs no resolubles (`**`, `{}`, `!`, `*` no final) se
+  reportan en `unresolved`, nunca se adivinan. Si hay declarados utilizables
+  el modo es `declared` y no se escanean contenedores; si no, `containers`
+  sobre `apps|services|packages|libs|modules` a profundidad 1; si nada
+  califica, `none`. Los fixtures nuevos (`monorepo-full`, `polyglot-monorepo`,
+  `apps-no-projects`) y `tests/subprojects.rs` (10 tests) cubren el layout,
+  el parseo de `members`, el fallback por contenedores, el marcador
+  `AGENTS.md`, la exclusión de `node_modules`, el no-derrame de comandos
+  hijos al `commands` raíz y el contrato v2. `scan/v1` queda superado como
+  contrato archivado (`schemas/scan-v1.json` intacto).
+
 - Gate de consistencia real en `check` (0.1.1 P0): `commands.documented`
   debe coincidir exactamente con los scripts detectados (faltantes y
   sobrantes fallan; las menciones rancias en docs se reportan con archivo),

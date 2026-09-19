@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aicontext/scan/v2",
+  "title": "AIContext scan report v2",
+  "type": "object",
+  "required": [
+    "schema",
+    "git",
+    "languages",
+    "packages",
+    "commands",
+    "tools",
+    "complexity",
+    "version_candidates",
+    "docs",
+    "ci",
+    "subprojects",
+    "subprojects_source"
+  ],
+  "properties": {
+    "schema": { "const": "aicontext/scan/v2" },
+    "git": {
+      "type": "object",
+      "required": ["root", "tracked_files"],
+      "properties": {
+        "root": { "type": "string" },
+        "head": { "type": ["string", "null"] },
+        "short_head": { "type": ["string", "null"] },
+        "branch": { "type": ["string", "null"] },
+        "tracked_files": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "languages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["language", "files", "loc"],
+        "properties": {
+          "language": { "type": "string" },
+          "files": { "type": "integer", "minimum": 0 },
+          "loc": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["manager", "manifest", "workspaces", "scripts"],
+        "properties": {
+          "manager": { "type": "string" },
+          "manifest": { "type": "string" },
+          "workspaces": { "type": "array", "items": { "type": "string" } },
+          "scripts": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "commands": { "type": "array", "items": { "type": "string" } },
+    "tools": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["name", "available", "managed_by"],
+        "properties": {
+          "name": { "type": "string" },
+          "available": { "type": "boolean" },
+          "version": { "type": ["string", "null"] },
+          "managed_by": { "type": "string" }
+        }
+      }
+    },
+    "complexity": {
+      "type": "object",
+      "required": ["profile", "source_files", "loc", "workspaces", "languages", "reason"],
+      "properties": {
+        "profile": { "enum": ["small", "medium", "large"] },
+        "source_files": { "type": "integer", "minimum": 0 },
+        "loc": { "type": "integer", "minimum": 0 },
+        "workspaces": { "type": "integer", "minimum": 0 },
+        "languages": { "type": "integer", "minimum": 0 },
+        "reason": { "type": "string" }
+      }
+    },
+    "version_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "version"],
+        "properties": {
+          "source": { "type": "string" },
+          "version": { "type": "string" }
+        }
+      }
+    },
+    "docs": { "type": "array", "items": { "type": "string" } },
+    "ci": { "type": "array", "items": { "type": "string" } },
+    "subprojects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "name",
+          "kind",
+          "manifest",
+          "manager",
+          "commands",
+          "agents_md",
+          "initialized",
+          "complexity"
+        ],
+        "properties": {
+          "path": { "type": "string" },
+          "name": { "type": "string" },
+          "kind": { "enum": ["manifest", "agents-marker"] },
+          "manifest": { "type": ["string", "null"] },
+          "manager": {
+            "type": ["string", "null"],
+            "enum": ["bun", "npm", "pnpm", "yarn", "cargo", "python", "go", null]
+          },
+          "commands": { "type": "array", "items": { "type": "string" } },
+          "agents_md": { "type": "boolean" },
+          "initialized": { "type": "boolean" },
+          "complexity": {
+            "type": "object",
+            "required": ["profile", "source_files", "loc", "workspaces", "languages", "reason"],
+            "properties": {
+              "profile": { "enum": ["small", "medium", "large"] },
+              "source_files": { "type": "integer", "minimum": 0 },
+              "loc": { "type": "integer", "minimum": 0 },
+              "workspaces": { "type": "integer", "minimum": 0 },
+              "languages": { "type": "integer", "minimum": 0 },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "subprojects_source": {
+      "type": "object",
+      "required": ["mode", "declared", "unresolved", "containers"],
+      "properties": {
+        "mode": { "enum": ["declared", "containers", "none"] },
+        "declared": { "type": "array", "items": { "type": "string" } },
+        "unresolved": { "type": "array", "items": { "type": "string" } },
+        "containers": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

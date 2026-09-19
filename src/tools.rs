@@ -238,7 +238,7 @@ pub(crate) fn build_plan(root: &std::path::Path) -> Vec<PlanSection> {
 
 fn empty_report(root: &std::path::Path) -> crate::scan::ScanReport {
     crate::scan::ScanReport {
-        schema: "aicontext/scan/v1".to_string(),
+        schema: crate::scan::SCAN_SCHEMA.to_string(),
         git: crate::scan::GitInfo {
             root: root.to_string_lossy().to_string(),
             head: None,
@@ -261,6 +261,13 @@ fn empty_report(root: &std::path::Path) -> crate::scan::ScanReport {
         version_candidates: Vec::new(),
         docs: Vec::new(),
         ci: Vec::new(),
+        subprojects: Vec::new(),
+        subprojects_source: crate::scan::SubprojectsSource {
+            mode: "none".to_string(),
+            declared: Vec::new(),
+            unresolved: Vec::new(),
+            containers: Vec::new(),
+        },
     }
 }
 

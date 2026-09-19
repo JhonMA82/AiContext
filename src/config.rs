@@ -25,6 +25,8 @@ pub struct RepoConfig {
     pub consistency: ConsistencySection,
     #[serde(default)]
     pub repository: RepositorySection,
+    #[serde(default)]
+    pub subprojects: SubprojectsSection,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -156,6 +158,20 @@ pub struct RepositorySection {
     pub size: Option<String>,
 }
 
+/// Subproject routing declarations. `extra` is the escape hatch for a
+/// declared monorepo that still has an undeclared project (e.g. a Rust
+/// service next to JS workspaces); entries are added to the declared list
+/// verbatim. `containers` overrides the default container directory scan
+/// used when nothing is declared. Both default to empty, so manifests
+/// written before this section existed keep parsing unchanged.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SubprojectsSection {
+    #[serde(default)]
+    pub extra: Vec<String>,
+    #[serde(default)]
+    pub containers: Vec<String>,
+}
+
 fn default_name() -> String {
     "unknown".to_string()
 }
@@ -206,6 +222,7 @@ impl Default for RepoConfig {
                 manifest: default_consistency(),
             },
             repository: RepositorySection { size: None },
+            subprojects: SubprojectsSection::default(),
         }
     }
 }
@@ -273,6 +290,10 @@ mode = "prefer"
 
 [consistency]
 manifest = "{CONSISTENCY}"
+
+[subprojects]
+extra = []
+containers = []
 "#
     )
 }

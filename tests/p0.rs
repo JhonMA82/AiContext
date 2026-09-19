@@ -183,7 +183,7 @@ fn scan_json_contract() {
     let v: serde_json::Value = serde_json::from_str(&out).expect("scan --json must be JSON");
     assert_eq!(
         v.get("schema").and_then(|s| s.as_str()),
-        Some("aicontext/scan/v1")
+        Some("aicontext/scan/v2")
     );
     assert!(
         v.get("git")

@@ -15,7 +15,9 @@ cargo run -- status [--json]
 cargo run -- check [--json]
 ```
 
-Contratos machine-readable: `schemas/` (`scan-v1`, `check-v1`, `error-v1`).
+Contratos machine-readable: `schemas/` (`scan-v2`, `check-v1`, `error-v1`).
+`scan --json` emite `aicontext/scan/v2` (supera `scan-v1`, que queda como
+contrato archivado) e incluye `subprojects`/`subprojects_source`.
 Fixtures y tests: `fixtures/`, `tests/` (`cargo test`).
 
 ## Gate de consistencia (`check`)
