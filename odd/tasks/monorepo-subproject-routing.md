@@ -2,9 +2,8 @@
 
 Rama: `feat/monorepo-subproject-routing` (creada desde `master` @ bfb88d2)
 Locator: `odd/tasks/monorepo-subproject-routing.md`
-Espejo Engram: topic `odd/monorepo-subproject-routing/tasks` — obs 996 guardada; el delta posterior
-(estrategia de cadena + contrato de WU2) quedó **pendiente** (Engram sin responder, 3 timeouts).
-Al volver: `mem_save` con el mismo `topic_key`, sin reintentos ciegos mientras falle.
+Espejo Engram: topic `odd/monorepo-subproject-routing/tasks` — obs 996 (v3) guardada; el delta posterior
+(estrategia de cadena + contrato de WU2 + cierre de WU1) se guardó al volver con el mismo `topic_key`.
 
 ## Objetivo
 
@@ -196,7 +195,7 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
 
 ## Progreso
 
-- [ ] WU1 detección + `scan/v2`
+- [x] WU1 detección + `scan/v2` — commit `b5f7347` (`feat: detect monorepo subprojects with scan/v2 contract`)
 - [ ] WU2 router en `AGENTS.md`
 - [ ] WU3 `subprojects.yml`
 - [ ] WU4 gates de `check`
@@ -207,8 +206,15 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
 ## Evidencia de verificación
 
 - Baseline pre-WU1: `cargo test` ⇒ 81 passed (13 suites, 182.90s); `cargo fmt --check` limpio.
-- WU1: pendiente.
+- WU1 (`b5f7347`): `cargo test` ⇒ 91 passed (14 suites, 166.56s) — los 10 tests de `tests/subprojects.rs`;
+  `cargo fmt --check` limpio; `aicontext check` exit 0 (advisory STALE_PROJECT_STATE, se refresca en la
+  chore sync post-cierre). Nota: en el worktree había restos de la rama TUI (`src/tui/`, `tests/tui.rs`,
+  wiring en `main.rs`/`cli.rs`/`Cargo.toml`) que **no** entraron al commit; el TUI vive completo en
+  `feat/tui-ratatui` (ea72ecd, RDD aprobado). El `.gitignore` ahora cubre `fixtures/**/target/` y
+  `fixtures/**/Cargo.lock` (los artefactos de build del fixture cargo quedaron fuera del commit).
 
 ## Próximo paso
 
-Cerrar la estrategia de cadena, recibir WU1 del writer, verificar y commitear.
+WU1 cerrado (`b5f7347`). Siguiente: delegar WU2 (bloques marcados en `AGENTS.md` + tabla en `PROJECT_STATE.md`)
+según el contrato del renderer ya escrito en el doc; verificar (`cargo fmt --check`, `cargo test`) y commitear
+como work unit sobre la rama. PR1 = WU1+WU2+WU6 apunta a `feat/monorepo-subproject-routing`.
