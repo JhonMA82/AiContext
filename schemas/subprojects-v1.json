@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aicontext/subprojects/v1",
+  "title": "AIContext subprojects manifest v1",
+  "type": "object",
+  "required": ["schema", "subprojects"],
+  "properties": {
+    "schema": { "const": "aicontext/subprojects/v1" },
+    "subprojects": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["purpose", "status"],
+        "properties": {
+          "purpose": { "type": "string" },
+          "status": { "enum": ["pending", "adopted"] }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

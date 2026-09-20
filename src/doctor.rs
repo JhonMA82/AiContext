@@ -230,6 +230,35 @@ pub fn run_doctor(root: &Path) -> Vec<Diagnostic> {
         ));
     }
 
+    // Installed skill vs this binary (WU7): the skill text is embedded,
+    // so an on-disk SKILL.md that differs from it is either stale (an
+    // older binary installed it) or hand-modified. Both warn with
+    // reinstall as remediation; a missing install warns too. The skill is
+    // opt-in, so this diagnostic never fails.
+    match crate::agent::installed_skill() {
+        None => out.push(warn(
+            "skill",
+            "aicontext-adopt is not installed for pi",
+            Some("aicontext agent install pi"),
+        )),
+        Some(installed) if installed.body == crate::agent::SKILL_BODY => out.push(ok(
+            "skill",
+            format!(
+                "aicontext-adopt up to date (v{})",
+                env!("CARGO_PKG_VERSION")
+            ),
+        )),
+        Some(installed) => out.push(warn(
+            "skill",
+            format!(
+                "installed skill differs from this binary (installed: {}, binary: v{})",
+                installed.version.as_deref().unwrap_or("unmanaged"),
+                env!("CARGO_PKG_VERSION")
+            ),
+            Some("aicontext agent install pi"),
+        )),
+    }
+
     // RTK name-collision trap (§41 example): only meaningful when an `rtk`
     // binary exists.
     if tools::detect_tool("rtk").available {
@@ -287,7 +316,7 @@ pub fn run_doctor(root: &Path) -> Vec<Diagnostic> {
 }
 
 pub fn cmd_doctor(json: bool) -> Result<i32> {
-    let root = crate::scan::current_dir_root()?;
+    let root = crate::scan::resolve_project_root()?;
     let diags = run_doctor(&root);
     let failed = diags.iter().any(|d| d.status == Status::Fail);
     let code = if failed { 1 } else { 0 };

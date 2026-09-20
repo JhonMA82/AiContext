@@ -1,17 +1,394 @@
 use anyhow::{Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::config::{
     self, RepoConfig, AST_GREP_RULES, CONSISTENCY, PATTERNS, PROJECT_STATE, REPO_MANIFEST,
 };
 use crate::output::AiError;
-use crate::scan::{self, ScanReport};
+use crate::scan::{self, ScanReport, Subproject};
 
 pub const GEN_START: &str = "<!-- aicontext:generated:start -->";
 pub const GEN_END: &str = "<!-- aicontext:generated:end -->";
 pub const CUR_START: &str = "<!-- aicontext:curated:start -->";
 pub const CUR_END: &str = "<!-- aicontext:curated:end -->";
+pub const ROUTING_START: &str = "<!-- aicontext:routing:start -->";
+pub const ROUTING_END: &str = "<!-- aicontext:routing:end -->";
+pub const CONTEXT_START: &str = "<!-- aicontext:context:start -->";
+pub const CONTEXT_END: &str = "<!-- aicontext:context:end -->";
+
+/// The router only exists when there is a choice to route: one project is
+/// just a normal repository and gets no `AGENTS.md` block.
+pub(crate) const ROUTING_MIN_SUBPROJECTS: usize = 2;
+const AGENTS_FILE: &str = "AGENTS.md";
+/// Placeholder for a fresh `PATTERNS.md`: semantic content belongs to the
+/// adoption skill. Shared by root and nested init so both seed identical bytes.
+const PATTERNS_PLACEHOLDER: &str = "# Patterns\n\n> Semantic adoption (`aicontext-adopt` skill) fills this file.\n> Status values: preferred | observed | legacy | exception | protected.\n";
+/// Contract id and location of the subproject manifest. `init` seeds it
+/// (never rewrites); `check` enforces the strict v1 shape and the closed
+/// status enum. Unknown schemas stay forward-compatible (read as absent).
+const SUBPROJECTS_SCHEMA: &str = "aicontext/subprojects/v1";
+pub(crate) const SUBPROJECTS_FILE: &str = ".engineering/subprojects.yml";
+/// Closed adoption lifecycle: the skill moves entries from `pending` to
+/// `adopted`. Anything else fails `check` (WU4 adds the lifecycle gates).
+const SUBPROJECT_STATUSES: [&str; 2] = ["pending", "adopted"];
+const CELL_MAX_CHARS: usize = 120;
+const EMPTY_CELL: &str = "—";
+
+/// Strict v1 view of `.engineering/subprojects.yml`
+/// (`aicontext/subprojects/v1`: path → {purpose, status}). Unknown keys
+/// fail `check` (the typo that silently passes is the gap this closes);
+/// schema evolution means a new schema id, not looser parsing. Readers
+/// that must stay forward-compatible (`status` counts) keep their own
+/// tolerant parse.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SubprojectsFile {
+    #[serde(default)]
+    pub(crate) schema: String,
+    #[serde(default)]
+    pub(crate) subprojects: BTreeMap<String, SubprojectEntry>,
+}
+
+/// Per-subproject entry. `purpose` feeds the routing table (editing it is
+/// genuine drift that `sync` resolves); `status` feeds the `status` counts
+/// and must be one of [`SUBPROJECT_STATUSES`].
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SubprojectEntry {
+    #[serde(default)]
+    pub(crate) purpose: String,
+    #[serde(default)]
+    pub(crate) status: String,
+}
+
+/// Reads the subproject manifest when present and well-formed. A missing,
+/// unreadable, unknown-schema or (as of the strict v1 shape) unknown-key
+/// file degrades to `None` instead of failing the render; `check` is the
+/// gate that reports those problems.
+pub(crate) fn load_subprojects_file(root: &Path) -> Option<SubprojectsFile> {
+    let text = std::fs::read_to_string(root.join(SUBPROJECTS_FILE)).ok()?;
+    let file: SubprojectsFile = serde_yaml::from_str(&text).ok()?;
+    if !file.schema.is_empty() && file.schema != SUBPROJECTS_SCHEMA {
+        return None;
+    }
+    Some(file)
+}
+
+/// Result of the seed-once `subprojects.yml` handling (human-readable,
+// printed by `init`; the machine contracts stay unchanged).
+struct SeedOutcome {
+    note: String,
+}
+
+/// Seeds `.engineering/subprojects.yml` with every detected subproject path
+/// as `status: pending`. The skill later fills `purpose` and moves entries
+/// to `adopted`. An existing file is never rewritten — not by `init`, not
+/// by `sync` — so hand-written purposes and adoptions survive every run.
+fn seed_subprojects_file(root: &Path, subprojects: &[Subproject]) -> Result<SeedOutcome> {
+    if subprojects.is_empty() {
+        return Ok(SeedOutcome {
+            note: "subprojects manifest not seeded: no subprojects detected".to_string(),
+        });
+    }
+    let path = root.join(SUBPROJECTS_FILE);
+    if path.exists() {
+        return Ok(SeedOutcome {
+            note: "subprojects manifest left intact (never rewritten)".to_string(),
+        });
+    }
+    let mut ordered: Vec<&Subproject> = subprojects.iter().collect();
+    ordered.sort_by(|a, b| a.path.cmp(&b.path));
+    let mut out = String::from(
+        "# Subproject adoption tracker (aicontext/subprojects/v1).\n# `init` seeds detected paths as `pending`; the adoption skill fills\n# `purpose` and moves entries to `adopted`. This file is never rewritten.\n",
+    );
+    out.push_str("schema: aicontext/subprojects/v1\nsubprojects:\n");
+    for s in &ordered {
+        out.push_str(&format!(
+            "  {}:\n    purpose: \"\"\n    status: pending\n",
+            s.path
+        ));
+    }
+    std::fs::write(&path, out)?;
+    Ok(SeedOutcome {
+        note: format!(
+            "subprojects manifest seeded with {} entr{}",
+            ordered.len(),
+            if ordered.len() == 1 { "y" } else { "ies" },
+        ),
+    })
+}
+
+/// Strict `check` gate for the subproject manifest: unknown keys (typos)
+/// and status values outside the closed enum fail with the exact offenders.
+/// An absent file passes (nothing declared); an unknown schema passes as
+/// skipped (forward-compatible); an unreadable or unparseable file fails
+/// closed. Detection reconciliation (missing/stale entries, adopted without
+/// a real nested context) belongs to WU4, not to this shape gate.
+pub(crate) fn check_subprojects_file(root: &Path) -> (bool, String) {
+    let path = root.join(SUBPROJECTS_FILE);
+    if !path.exists() {
+        return (
+            true,
+            "no subprojects manifest — nothing to validate".to_string(),
+        );
+    }
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) => {
+            return (
+                false,
+                format!("{SUBPROJECTS_FILE} is unreadable ({e}) — fix permissions or delete it"),
+            )
+        }
+    };
+    let value: serde_yaml::Value = match serde_yaml::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                false,
+                format!(
+                    "{SUBPROJECTS_FILE} is not valid YAML ({e}) — fix it or delete it and run `aicontext init` to reseed"
+                ),
+            )
+        }
+    };
+    let schema = value.get("schema").and_then(|s| s.as_str()).unwrap_or("");
+    if !schema.is_empty() && schema != SUBPROJECTS_SCHEMA {
+        return (
+            true,
+            format!("unknown schema {schema} — skipped (forward-compatible)"),
+        );
+    }
+    let file: SubprojectsFile = match serde_yaml::from_value(value) {
+        Ok(f) => f,
+        Err(e) => {
+            return (
+                false,
+                format!("{SUBPROJECTS_FILE} has unknown keys or a bad shape ({e}) — fix or reseed"),
+            )
+        }
+    };
+    let mut bad: Vec<String> = file
+        .subprojects
+        .iter()
+        .filter(|(_, e)| !SUBPROJECT_STATUSES.contains(&e.status.as_str()))
+        .map(|(p, e)| format!("{p}: status {:?}", e.status))
+        .collect();
+    bad.sort();
+    if bad.is_empty() {
+        (
+            true,
+            format!(
+                "{} subproject(s) validated: {}",
+                file.subprojects.len(),
+                SUBPROJECT_STATUSES.join("/"),
+            ),
+        )
+    } else {
+        (
+            false,
+            format!(
+                "invalid status (expected {}): {}",
+                SUBPROJECT_STATUSES.join(" or "),
+                bad.join(", "),
+            ),
+        )
+    }
+}
+
+/// Deterministic markdown table cell: whitespace and newlines collapse to
+/// single spaces, `|` is escaped so it cannot split the row, empty values
+/// become an em dash and the result is clipped to `CELL_MAX_CHARS`.
+fn table_cell(value: &str) -> String {
+    let collapsed = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let escaped = collapsed.replace('|', "\\|");
+    if escaped.is_empty() {
+        return EMPTY_CELL.to_string();
+    }
+    escaped.chars().take(CELL_MAX_CHARS).collect()
+}
+
+/// The single source of the subproject table (header, separator and rows).
+/// Both the `AGENTS.md` routing block and the generated block of
+/// `PROJECT_STATE.md` call exactly this function, so the two tables can
+/// never drift. Rows are ordered by path and every cell goes through
+/// [`table_cell`], which keeps the output byte-stable for `freshness_key`.
+fn render_subproject_rows(subprojects: &[Subproject], file: Option<&SubprojectsFile>) -> String {
+    let mut ordered: Vec<&Subproject> = subprojects.iter().collect();
+    ordered.sort_by(|a, b| a.path.cmp(&b.path));
+    let mut out = String::new();
+    out.push_str("| Path | Stack | Manifest | Entry context | Commands | Purpose |\n");
+    out.push_str("| --- | --- | --- | --- | --- | --- |\n");
+    for s in ordered {
+        let manifest = s
+            .manifest
+            .as_deref()
+            .map(|m| format!("{}/{m}", s.path))
+            .unwrap_or_default();
+        let entry = if s.agents_md {
+            format!("{}/AGENTS.md", s.path)
+        } else {
+            String::new()
+        };
+        let purpose = file
+            .and_then(|f| f.subprojects.get(&s.path))
+            .map(|e| e.purpose.as_str())
+            .unwrap_or("");
+        out.push_str(&format!(
+            "| {} | {} | {} | {} | {} | {} |\n",
+            table_cell(&s.path),
+            table_cell(s.manager.as_deref().unwrap_or("")),
+            table_cell(&manifest),
+            table_cell(&entry),
+            table_cell(&s.commands.join(", ")),
+            table_cell(purpose),
+        ));
+    }
+    out.trim_end_matches('\n').to_string()
+}
+
+/// The marked router inserted in the root `AGENTS.md`. Callers enforce
+/// [`ROUTING_MIN_SUBPROJECTS`], so a single-project repo never renders one.
+fn render_routing_block(subprojects: &[Subproject], file: Option<&SubprojectsFile>) -> String {
+    format!(
+        "{ROUTING_START}\n\
+         ## Subprojects — read exactly one\n\
+         \n\
+         This repository has {count} subprojects. Do not explore the tree broadly.\n\
+         \n\
+         {table}\n\
+         \n\
+         Rules:\n\
+         \n\
+         - Identify the subproject that owns your task's files and read only its entry context.\n\
+         - A file belongs to exactly one subproject; that subproject's `AGENTS.md` governs it.\n\
+         - Cross-cutting work: this block plus `.engineering/PROJECT_STATE.md`, nothing else.\n\
+         \n\
+         > Generated by `aicontext sync`. Do not edit inside this block.\n\
+         {ROUTING_END}",
+        count = subprojects.len(),
+        table = render_subproject_rows(subprojects, file),
+    )
+}
+
+/// The marked repository-context pointer. The body is exactly the legacy
+/// [`crate::agent::AGENTS_POINTER`] text, so a manually migrated file keeps
+/// the same visible guidance while gaining the markers.
+fn render_context_block() -> String {
+    format!(
+        "{CONTEXT_START}\n{}{CONTEXT_END}",
+        crate::agent::AGENTS_POINTER
+    )
+}
+
+/// Marker-inclusive slice of `text` for the block delimited by `start` and
+/// `end` (both markers must exist, in that order).
+fn extract_block<'a>(text: &'a str, start: &str, end: &str) -> Option<&'a str> {
+    let s = text.find(start)?;
+    let rel = text.get(s..)?.find(end)?;
+    Some(&text[s..s + rel + end.len()])
+}
+
+/// Presence of the marked routing block (the WU4 presence gate reads this;
+// the legacy unmarked pointer does not count).
+pub(crate) fn has_routing_block(text: &str) -> bool {
+    extract_block(text, ROUTING_START, ROUTING_END).is_some()
+}
+
+/// Where [`upsert_block`] placed (or found) a marked block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Placement {
+    /// The markers already existed; the block was replaced in place.
+    InPlace,
+    /// No markers: inserted immediately after the first level-1 heading.
+    AfterFirstHeading,
+    /// No markers and no heading: inserted at the very top (routing).
+    Top,
+    /// No markers and no heading: appended at the very end (context pointer).
+    End,
+}
+
+fn placement_phrase(placement: Placement) -> &'static str {
+    match placement {
+        Placement::InPlace => "refreshed in place",
+        Placement::AfterFirstHeading => "inserted after the first heading",
+        Placement::Top => "inserted at the top",
+        Placement::End => "appended at the end",
+    }
+}
+
+/// End byte offset (including the newline, when present) of the first line
+/// that is a level-1 ATX heading (`# Something` or `#`), ignoring indent.
+/// Only used for placement; heading detection inside fenced code blocks is
+/// deliberately not attempted.
+fn first_h1_line_end(text: &str) -> Option<usize> {
+    let mut offset = 0usize;
+    for line in text.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("# ") || trimmed.trim() == "#" {
+            return Some(offset + line.len());
+        }
+        offset += line.len();
+    }
+    None
+}
+
+/// Deterministic block placement that never touches a byte outside the
+/// marked region: markers present ⇒ replace in place (byte-identical when
+/// the render did not change); otherwise insert immediately after the first
+/// level-1 heading; otherwise the routing block goes to the very top and
+/// the context pointer to the very end.
+fn upsert_block(existing: &str, rendered: &str, start: &str, end: &str) -> (String, Placement) {
+    if let Some(found) = extract_block(existing, start, end) {
+        if found == rendered {
+            return (existing.to_string(), Placement::InPlace);
+        }
+        let s = existing.find(start).unwrap_or(0);
+        let e = s + found.len();
+        let mut out = String::with_capacity(existing.len() + rendered.len());
+        out.push_str(&existing[..s]);
+        out.push_str(rendered);
+        out.push_str(&existing[e..]);
+        return (out, Placement::InPlace);
+    }
+    if let Some(line_end) = first_h1_line_end(existing) {
+        let after = &existing[line_end..];
+        // Exactly one blank line around the inserted block without editing
+        // the user bytes that follow it.
+        let sep = if after.is_empty() || after.starts_with('\n') {
+            "\n"
+        } else {
+            "\n\n"
+        };
+        let mut out = String::with_capacity(existing.len() + rendered.len() + 4);
+        out.push_str(&existing[..line_end]);
+        out.push('\n');
+        out.push_str(rendered);
+        out.push_str(sep);
+        out.push_str(after);
+        return (out, Placement::AfterFirstHeading);
+    }
+    if start == CONTEXT_START {
+        let mut out = existing.to_string();
+        if !out.is_empty() {
+            out.push('\n');
+            if !existing.ends_with('\n') {
+                out.push('\n');
+            }
+        }
+        out.push_str(rendered);
+        out.push('\n');
+        return (out, Placement::End);
+    }
+    let mut out = String::with_capacity(existing.len() + rendered.len() + 2);
+    out.push_str(rendered);
+    out.push_str("\n\n");
+    out.push_str(existing);
+    (out, Placement::Top)
+}
 
 fn repo_name_from_root(root: &Path) -> String {
     root.file_name()
@@ -44,6 +421,72 @@ fn ensure_gitignore(root: &Path) -> Result<bool> {
     Ok(changed)
 }
 
+/// Deterministic test-function census for the generated block.
+///
+/// Definition: count of lines whose trimmed content starts with `#[test`
+/// in tracked `*.rs` files, split into `src/` (unit) vs `tests/`
+/// (integration). The tracked set comes from `git ls-files '*.rs'` run in
+/// the repo root (available as `git.root` in the scan report), so untracked
+/// files never invalidate freshness. Paths under `.git/`, `target/` or
+/// `.engineering/` are skipped (same exclusion spirit as the scan); the
+/// list is sorted for determinism and unreadable or oversize (>1MB,
+/// likely generated) files are skipped. Only `src/` and `tests/` prefixed
+/// paths contribute to the counts.
+fn count_test_functions(root: &str) -> (usize, usize) {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "*.rs"])
+        .output();
+    let out = match out {
+        Ok(o) => o,
+        Err(_) => return (0, 0),
+    };
+    if out.status.success() {
+    } else {
+        return (0, 0);
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let mut files: Vec<&str> = stdout.lines().collect();
+    files.sort();
+    let root_path = Path::new(root);
+    let mut unit = 0usize;
+    let mut integration = 0usize;
+    for rel in files {
+        if rel.contains(".git/") || rel.contains("target/") || rel.contains(".engineering/") {
+            continue;
+        }
+        let is_unit = rel.starts_with("src/");
+        let is_integration = rel.starts_with("tests/");
+        if is_unit || is_integration {
+        } else {
+            continue;
+        }
+        let full = root_path.join(rel);
+        let oversize = match std::fs::metadata(&full) {
+            Ok(m) => m.len() > 1_000_000,
+            Err(_) => continue,
+        };
+        if oversize {
+            continue;
+        }
+        let text = match std::fs::read_to_string(&full) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        let n = text
+            .lines()
+            .filter(|l| l.trim_start().starts_with("#[test"))
+            .count();
+        if is_unit {
+            unit += n;
+        } else {
+            integration += n;
+        }
+    }
+    (unit, integration)
+}
+
 pub(crate) fn generated_block(report: &ScanReport) -> String {
     let mut s = String::new();
     s.push_str(&format!(
@@ -67,17 +510,39 @@ pub(crate) fn generated_block(report: &ScanReport) -> String {
         "Source files: {} | LOC: ~{}\n",
         report.complexity.source_files, report.complexity.loc
     ));
-    s.push_str("\nImportant paths:\n");
+    let (unit_tests, integration_tests) = count_test_functions(&report.git.root);
+    s.push_str(&format!(
+        "Test functions: {} (src: {}, tests: {})\n",
+        unit_tests + integration_tests,
+        unit_tests,
+        integration_tests
+    ));
+    // Blank line before each list: markdownlint (MD032) inserts one
+    // anyway, and any post-sync reformat would invalidate freshness.
+    // The generator must emit lint-stable markdown so sync converges.
+    s.push_str("\nImportant paths:\n\n");
     for d in &report.docs {
         s.push_str(&format!("- {d}\n"));
     }
     if !report.commands.is_empty() {
-        s.push_str("\nCommands:\n");
+        s.push_str("\nCommands:\n\n");
         let mut cmds = report.commands.clone();
         cmds.sort();
         for c in cmds.iter().take(20) {
             s.push_str(&format!("- {c}\n"));
         }
+    }
+    // Projected subproject facts: `purpose` comes from
+    // `.engineering/subprojects.yml`, so editing it is genuine drift that
+    // `sync` resolves. Same renderer as the AGENTS.md routing block.
+    if report.subprojects.len() >= ROUTING_MIN_SUBPROJECTS {
+        let subprojects_file = load_subprojects_file(Path::new(&report.git.root));
+        s.push_str("\nSubprojects:\n\n");
+        s.push_str(&render_subproject_rows(
+            &report.subprojects,
+            subprojects_file.as_ref(),
+        ));
+        s.push_str("\n\n");
     }
     s
 }
@@ -123,8 +588,259 @@ fn extract_generated(existing: &str) -> Option<String> {
     Some(existing.get(start..end)?.to_string())
 }
 
-pub fn cmd_init(profile: Option<String>, _non_interactive: bool, json: bool) -> Result<i32> {
-    let root = scan::current_dir_root()?;
+/// How `cmd_init`/`cmd_sync` may treat `AGENTS.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RoutingMode {
+    /// `init`: may create the file and insert missing blocks.
+    Init,
+    /// `sync`: refreshes blocks that already exist; never creates or inserts.
+    Sync,
+    /// `sync --check`: reports drift only, never writes.
+    Report,
+}
+
+/// Result of the idempotent `AGENTS.md` routing update (human-readable,
+/// printed by `init`/`sync`; the machine contracts stay unchanged).
+struct RoutingOutcome {
+    note: String,
+}
+
+/// Keeps the marked blocks of the root `AGENTS.md` current. The file is
+/// user-owned: only bytes between markers are rewritten, `sync` never
+/// creates it, and a legacy unmarked pointer is reported, never rewritten.
+fn update_agents_routing(
+    root: &Path,
+    subprojects: &[Subproject],
+    file: Option<&SubprojectsFile>,
+    mode: RoutingMode,
+) -> Result<RoutingOutcome> {
+    let path = root.join(AGENTS_FILE);
+    let existing = std::fs::read_to_string(&path).ok();
+
+    // One project is not a routing problem: leave any existing block alone
+    // (WU4 gates drift later), render nothing, touch no file.
+    if subprojects.len() < ROUTING_MIN_SUBPROJECTS {
+        let has_block = existing
+            .as_deref()
+            .map(|t| extract_block(t, ROUTING_START, ROUTING_END).is_some())
+            .unwrap_or(false);
+        let note = if has_block {
+            "AGENTS.md routing block left intact (fewer than 2 subprojects)"
+        } else {
+            "AGENTS.md untouched: fewer than 2 subprojects"
+        };
+        return Ok(RoutingOutcome {
+            note: note.to_string(),
+        });
+    }
+
+    let Some(text) = existing else {
+        if mode != RoutingMode::Init {
+            return Ok(RoutingOutcome {
+                note: "AGENTS.md absent: no routing block to refresh".to_string(),
+            });
+        }
+        // Fresh file: routing block first, context pointer last, nothing
+        // else. Both go through the same deterministic placement paths.
+        let (created, _) = upsert_block("", &render_context_block(), CONTEXT_START, CONTEXT_END);
+        let (created, _) = upsert_block(
+            &created,
+            &render_routing_block(subprojects, file),
+            ROUTING_START,
+            ROUTING_END,
+        );
+        std::fs::write(&path, created)?;
+        return Ok(RoutingOutcome {
+            note: "AGENTS.md created with context and routing blocks".to_string(),
+        });
+    };
+
+    let write = mode != RoutingMode::Report;
+    // Detected before any insertion: the routing block itself mentions
+    // `.engineering/PROJECT_STATE.md`, so this must not see our own output.
+    let legacy = crate::agent::legacy_pointer_present(&text);
+    let mut current = text;
+    let mut changed = false;
+    let mut notes: Vec<String> = Vec::new();
+
+    // Context pointer: refresh in place when marked; `init` may insert the
+    // marked block, except when the legacy unmarked pointer exists — that
+    // text is user-owned and must be reported, never rewritten or duplicated.
+    if extract_block(&current, CONTEXT_START, CONTEXT_END).is_some() {
+        let rendered = render_context_block();
+        if extract_block(&current, CONTEXT_START, CONTEXT_END) != Some(rendered.as_str()) {
+            if write {
+                let (next, _) = upsert_block(&current, &rendered, CONTEXT_START, CONTEXT_END);
+                current = next;
+                changed = true;
+                notes.push("context pointer block refreshed".to_string());
+            } else {
+                notes.push("context pointer block stale; run `aicontext sync`".to_string());
+            }
+        }
+    } else if legacy {
+        notes.push("legacy pointer left untouched (unmarked)".to_string());
+    } else if mode == RoutingMode::Init {
+        let (next, placement) = upsert_block(
+            &current,
+            &render_context_block(),
+            CONTEXT_START,
+            CONTEXT_END,
+        );
+        if next != current {
+            current = next;
+            changed = true;
+            notes.push(format!(
+                "context pointer block {}",
+                placement_phrase(placement)
+            ));
+        }
+    } else {
+        notes.push("context pointer block missing; run `aicontext init`".to_string());
+    }
+
+    // Routing block: refresh when marked; `init` inserts a missing block;
+    // `sync` only reports it (WU4 owns drift gates).
+    let rendered_routing = render_routing_block(subprojects, file);
+    match extract_block(&current, ROUTING_START, ROUTING_END) {
+        Some(found) => {
+            if found == rendered_routing {
+                notes.push("routing block already up to date".to_string());
+            } else if write {
+                let (next, placement) =
+                    upsert_block(&current, &rendered_routing, ROUTING_START, ROUTING_END);
+                current = next;
+                changed = true;
+                notes.push(format!("routing block {}", placement_phrase(placement)));
+            } else {
+                notes.push("routing block stale; run `aicontext sync`".to_string());
+            }
+        }
+        None if mode == RoutingMode::Init => {
+            let (next, placement) =
+                upsert_block(&current, &rendered_routing, ROUTING_START, ROUTING_END);
+            current = next;
+            changed = true;
+            notes.push(format!("routing block {}", placement_phrase(placement)));
+        }
+        None => notes.push("routing block missing; run `aicontext init`".to_string()),
+    }
+
+    if changed && write {
+        std::fs::write(&path, &current)?;
+    }
+    Ok(RoutingOutcome {
+        note: format!("AGENTS.md: {}", notes.join("; ")),
+    })
+}
+
+/// Outcome of one nested subproject initialization (WU5).
+struct NestedOutcome {
+    note: String,
+}
+
+/// Initializes the nested `.engineering/` context of one detected
+/// subproject: manifest with the `[subproject]` parent pointer, generated
+/// state, patterns placeholder and consistency stub (all seed-once, never
+/// overwritten), plus the marked context pointer in the subproject's own
+/// `AGENTS.md` when that file already exists — never created. Reruns only
+/// refresh generated content, so the operation is byte-idempotent.
+///
+/// Known limitation: the nested scan still runs repo-wide `git` commands,
+/// so counts (tracked files, source files) cover the whole monorepo. The
+/// nested context stays self-consistent (its stub is seeded from the same
+/// report, so its own `check` converges); scoping the scan to the subtree
+/// is a follow-up.
+fn init_nested(root: &Path, sub: &Subproject, profile: &str) -> Result<NestedOutcome> {
+    let nested = root.join(&sub.path);
+    let eng = nested.join(".engineering");
+    std::fs::create_dir_all(&eng)?;
+    std::fs::create_dir_all(eng.join("rules/ast-grep"))?;
+    let mut seeded = 0usize;
+
+    // Parent pointer: one `..` per path depth (`apps/web` → `../..`).
+    let depth = sub.path.split('/').count();
+    let parent_rel = vec![".."; depth].join("/");
+    let manifest_path = nested.join(REPO_MANIFEST);
+    if !manifest_path.exists() {
+        let name = repo_name_from_root(&nested);
+        let source = config::version_source_for(&nested);
+        std::fs::write(
+            &manifest_path,
+            config::minimal_nested_toml(&name, profile, source, &parent_rel),
+        )?;
+        seeded += 1;
+    }
+    // Context pointer per subproject: refresh in place when marked, insert
+    // when missing, report a legacy unmarked pointer without touching it —
+    // and never create the file. A nested project is a single project, so
+    // no routing block is ever rendered here. This runs before the scan so
+    // the seeded state already covers the pointer (no self-staleness).
+    let agents_path = nested.join(AGENTS_FILE);
+    let pointer = match std::fs::read_to_string(&agents_path) {
+        Err(_) => "no AGENTS.md — pointer skipped (never created)".to_string(),
+        Ok(text) => {
+            let rendered = render_context_block();
+            if extract_block(&text, CONTEXT_START, CONTEXT_END) == Some(rendered.as_str()) {
+                "context pointer already up to date".to_string()
+            } else if crate::agent::legacy_pointer_present(&text) {
+                "legacy pointer left untouched (unmarked)".to_string()
+            } else {
+                let (next, placement) = upsert_block(&text, &rendered, CONTEXT_START, CONTEXT_END);
+                if next == text {
+                    "context pointer already up to date".to_string()
+                } else {
+                    std::fs::write(&agents_path, next)?;
+                    format!("context pointer {}", placement_phrase(placement))
+                }
+            }
+        }
+    };
+
+    let report = scan::collect_scan(&nested)?;
+    let consistency_path = nested.join(CONSISTENCY);
+    if !consistency_path.exists() {
+        std::fs::write(
+            &consistency_path,
+            config::minimal_consistency(&report.commands),
+        )?;
+        seeded += 1;
+    }
+    let patterns_path = nested.join(PATTERNS);
+    if !patterns_path.exists() {
+        std::fs::write(&patterns_path, PATTERNS_PLACEHOLDER)?;
+        seeded += 1;
+    }
+    // PROJECT_STATE.md — preserve curated, refresh generated.
+    let state_path = nested.join(PROJECT_STATE);
+    let curated = std::fs::read_to_string(&state_path)
+        .ok()
+        .as_deref()
+        .and_then(extract_curated);
+    let generated = generated_block(&report);
+    std::fs::write(
+        &state_path,
+        render_project_state(&generated, curated.as_deref()),
+    )?;
+
+    let _ = ensure_gitignore(&nested)?;
+
+    Ok(NestedOutcome {
+        note: if seeded > 0 {
+            format!("nested context seeded ({seeded} file(s)); {pointer}")
+        } else {
+            format!("nested context left intact; {pointer}")
+        },
+    })
+}
+
+pub fn cmd_init(
+    profile: Option<String>,
+    _non_interactive: bool,
+    json: bool,
+    recursive: bool,
+) -> Result<i32> {
+    let root = scan::resolve_project_root()?;
     let profile = profile.unwrap_or_else(|| "auto".to_string());
     let eng = root.join(".engineering");
     std::fs::create_dir_all(&eng)?;
@@ -136,21 +852,23 @@ pub fn cmd_init(profile: Option<String>, _non_interactive: bool, json: bool) -> 
         let name = repo_name_from_root(&root);
         std::fs::write(&manifest_path, config::minimal_toml(&name, &profile))?;
     }
-    // consistency.yml stub.
+    // Scan first: PROJECT_STATE and consistency.yml are both seeded from
+    // detected facts, so a fresh `init` passes `check` and later drift fails.
+    let report = scan::collect_scan(&root)?;
+    // consistency.yml stub — never overwrite an existing manifest.
     let consistency_path = root.join(CONSISTENCY);
     if !consistency_path.exists() {
-        std::fs::write(&consistency_path, config::minimal_consistency())?;
+        std::fs::write(
+            &consistency_path,
+            config::minimal_consistency(&report.commands),
+        )?;
     }
     // PATTERNS.md placeholder (semantic content belongs to the skill).
     let patterns_path = root.join(PATTERNS);
     if !patterns_path.exists() {
-        std::fs::write(
-            &patterns_path,
-            "# Patterns\n\n> Semantic adoption (`aicontext-adopt` skill) fills this file.\n> Status values: preferred | observed | legacy | exception | protected.\n",
-        )?;
+        std::fs::write(&patterns_path, PATTERNS_PLACEHOLDER)?;
     }
     // PROJECT_STATE.md — preserve curated, refresh generated.
-    let report = scan::collect_scan(&root)?;
     let state_path = root.join(PROJECT_STATE);
     let curated = std::fs::read_to_string(&state_path)
         .ok()
@@ -163,6 +881,38 @@ pub fn cmd_init(profile: Option<String>, _non_interactive: bool, json: bool) -> 
     )?;
 
     ensure_gitignore(&root)?;
+
+    // Seed the adoption tracker before the router reads it: detected paths
+    // enter as `pending`, the skill fills `purpose`/`status` later. An
+    // existing file is never rewritten here or in `sync`.
+    let seed = seed_subprojects_file(&root, &report.subprojects)?;
+
+    // The router lives in AGENTS.md (user-owned file): markers only, and
+    // only with two or more subprojects. `init` may create the file; `sync`
+    // never does.
+    let subprojects_file = load_subprojects_file(&root);
+    let routing = update_agents_routing(
+        &root,
+        &report.subprojects,
+        subprojects_file.as_ref(),
+        RoutingMode::Init,
+    )?;
+
+    // `--recursive`: one nested context per detected subproject (ordered by
+    // path). Each gets its own `.engineering/` (manifest with the
+    // `[subproject]` parent pointer, state, patterns, consistency stub) and
+    // a context pointer in its own `AGENTS.md` when that file already
+    // exists — never created. Everything here is seed-once: reruns only
+    // refresh generated content, like the root flow.
+    let mut nested_notes: Vec<String> = Vec::new();
+    if recursive {
+        let mut ordered: Vec<&Subproject> = report.subprojects.iter().collect();
+        ordered.sort_by(|a, b| a.path.cmp(&b.path));
+        for sub in ordered {
+            let outcome = init_nested(&root, sub, &profile)?;
+            nested_notes.push(format!("{}: {}", sub.path, outcome.note));
+        }
+    }
 
     // Run check to report what is still missing.
     let check_code = crate::check::run_check(&root, json)?;
@@ -184,13 +934,18 @@ pub fn cmd_init(profile: Option<String>, _non_interactive: bool, json: bool) -> 
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
         println!("Initialized AIContext in {}", root.to_string_lossy());
+        println!("{}", routing.note);
+        println!("Subprojects: {}", seed.note);
+        for note in &nested_notes {
+            println!("  {note}");
+        }
         println!("Semantic TODO: fill Purpose/Capabilities/Constraints in {PROJECT_STATE}, then adopt patterns in {PATTERNS}.");
     }
     Ok(check_code)
 }
 
 pub fn cmd_sync(check_only: bool, json: bool) -> Result<i32> {
-    let root = scan::current_dir_root()?;
+    let root = scan::resolve_project_root()?;
     let cfg = RepoConfig::load(&root)
         .map_err(|e| AiError::new("NOT_INITIALIZED", format!("{e:#}"), Some("aicontext init")))?;
     let state_path: PathBuf = cfg.state_path(&root);
@@ -200,6 +955,20 @@ pub fn cmd_sync(check_only: bool, json: bool) -> Result<i32> {
     let fresh_generated = generated_block(&report);
     let current_generated = extract_generated(&existing).unwrap_or_default();
     let drift = freshness_key(&current_generated) != freshness_key(&fresh_generated);
+
+    // `sync` refreshes existing AGENTS.md blocks and reports a missing one;
+    // it never creates the file. `--check` writes nothing at all.
+    let subprojects_file = load_subprojects_file(&root);
+    let routing = update_agents_routing(
+        &root,
+        &report.subprojects,
+        subprojects_file.as_ref(),
+        if check_only {
+            RoutingMode::Report
+        } else {
+            RoutingMode::Sync
+        },
+    )?;
 
     if check_only {
         if json {
@@ -215,12 +984,15 @@ pub fn cmd_sync(check_only: bool, json: bool) -> Result<i32> {
                     synchronized: !drift,
                 })?
             );
-        } else if drift {
-            println!(
-                "stale: PROJECT_STATE generated block differs from scan; run `aicontext sync`."
-            );
         } else {
-            println!("synchronized.");
+            if drift {
+                println!(
+                    "stale: PROJECT_STATE generated block differs from scan; run `aicontext sync`."
+                );
+            } else {
+                println!("synchronized.");
+            }
+            println!("{}", routing.note);
         }
         return Ok(if drift { 1 } else { 0 });
     }
@@ -245,16 +1017,19 @@ pub fn cmd_sync(check_only: bool, json: bool) -> Result<i32> {
                 updated: drift,
             })?
         );
-    } else if drift {
-        println!("Synced generated block in {}", cfg.state.project_state);
     } else {
-        println!("Already synchronized (zero diff).");
+        if drift {
+            println!("Synced generated block in {}", cfg.state.project_state);
+        } else {
+            println!("Already synchronized (zero diff).");
+        }
+        println!("{}", routing.note);
     }
     Ok(0)
 }
 
 pub fn cmd_status(json: bool) -> Result<i32> {
-    let root = scan::current_dir_root()?;
+    let root = scan::resolve_project_root()?;
     let cfg = RepoConfig::load(&root);
     let report = scan::collect_scan(&root)?;
     let (state_label, last_check) = match &cfg {
@@ -270,7 +1045,34 @@ pub fn cmd_status(json: bool) -> Result<i32> {
         }
         Err(_) => ("uninitialized", "unknown"),
     };
+    // Subproject adoption counts: only entries whose key matches a detected
+    // subproject path count; an absent, unreadable or non-v1 manifest is
+    // 0/0, never an error (`check` is the gate that reports those problems).
+    let subprojects_file = load_subprojects_file(&root);
+    let has_subprojects_file = root.join(SUBPROJECTS_FILE).is_file();
+    let detected: Vec<&str> = report.subprojects.iter().map(|s| s.path.as_str()).collect();
+    let mut adopted = 0usize;
+    let mut pending = 0usize;
+    if let Some(file) = &subprojects_file {
+        for (path, entry) in &file.subprojects {
+            if !detected.contains(&path.as_str()) {
+                continue;
+            }
+            match entry.status.as_str() {
+                "adopted" => adopted += 1,
+                "pending" => pending += 1,
+                _ => {}
+            }
+        }
+    }
+    let total = detected.len();
     if json {
+        #[derive(Serialize)]
+        struct SubprojectsOut {
+            total: usize,
+            adopted: usize,
+            pending: usize,
+        }
         #[derive(Serialize)]
         struct StatusOut<'a> {
             schema: &'a str,
@@ -279,6 +1081,7 @@ pub fn cmd_status(json: bool) -> Result<i32> {
             head: Option<&'a str>,
             complexity: &'a str,
             last_check: &'a str,
+            subprojects: SubprojectsOut,
         }
         let root_str = root.to_string_lossy().into_owned();
         let out = StatusOut {
@@ -288,6 +1091,11 @@ pub fn cmd_status(json: bool) -> Result<i32> {
             head: report.git.short_head.as_deref(),
             complexity: &report.complexity.profile,
             last_check,
+            subprojects: SubprojectsOut {
+                total,
+                adopted,
+                pending,
+            },
         };
         println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(0);
@@ -330,6 +1138,11 @@ pub fn cmd_status(json: bool) -> Result<i32> {
         println!("Hint: run `aicontext init`.");
     } else if state_label == "stale" {
         println!("Hint: run `aicontext sync`.");
+    }
+    // The section appears when there is something to report: detected
+    // subprojects or an existing manifest (even if it is still unparseable).
+    if total > 0 || has_subprojects_file {
+        println!("Subprojects: detected: {total} | adopted: {adopted} | pending: {pending}");
     }
     let _ = AST_GREP_RULES;
     Ok(0)

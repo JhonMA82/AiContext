@@ -293,3 +293,229 @@ fn full_p4_counts_every_adapter() {
     assert!(ld.contains("1 broken link(s)"), "lychee count: {ld}");
     assert!(zd.contains("template-injection"), "zizmor ident: {zd}");
 }
+
+fn set_adapter_policy(dir: &Path, body: &str) {
+    let path = dir.join(".engineering/consistency.yml");
+    let mut text = std::fs::read_to_string(&path).expect("consistency.yml after init");
+    text.push_str(body);
+    std::fs::write(&path, text).expect("write consistency.yml");
+}
+
+fn check_json(dir: &Path, path: String) -> (i32, serde_json::Value) {
+    let (code, out) = run_with_path(dir, ["check", "--json"], path);
+    let v: serde_json::Value = serde_json::from_str(&out).expect("check --json");
+    assert_eq!(v["schema"], "aicontext/check/v1");
+    (code, v)
+}
+
+fn finding_named(v: &serde_json::Value, name: &str) -> serde_json::Value {
+    v.get("findings")
+        .and_then(|f| f.as_array())
+        .and_then(|fs| {
+            fs.iter()
+                .find(|f| f.get("name").and_then(|n| n.as_str()) == Some(name))
+                .cloned()
+        })
+        .unwrap_or_else(|| panic!("finding {name} must exist: {v}"))
+}
+
+#[test]
+fn required_policy_clean_run_passes() {
+    let dir = fixture_repo("node-single");
+    let bindir = unique_base("adapters-bin-req-clean");
+    write_shim(&bindir, "knip", r#"{"files": [], "exports": {}}"#, 0);
+    let path = overlay_path(&bindir);
+    let (c, _) = run_with_path(&dir, ["init", "--non-interactive"], path.clone());
+    assert_eq!(c, 0, "init must pass before any policy is declared");
+    set_adapter_policy(&dir, "adapters:\n  knip:\n    policy: required\n");
+    let (cc, v) = check_json(&dir, path);
+    assert_eq!(cc, 0, "required adapter with a clean run must pass: {v}");
+    let knip = finding_named(&v, "adapter:knip");
+    assert_eq!(knip.get("passed").and_then(|p| p.as_bool()), Some(true));
+    let detail = knip.get("detail").and_then(|d| d.as_str()).unwrap_or("");
+    assert!(
+        detail.contains("(policy required"),
+        "must note enforcement: {detail}"
+    );
+}
+
+#[test]
+fn required_policy_with_issues_fails() {
+    let dir = fixture_repo("node-single");
+    let bindir = unique_base("adapters-bin-req-issues");
+    write_shim(
+        &bindir,
+        "knip",
+        r#"{"files": ["src/old.ts"], "exports": {"src/a.ts": ["unusedFn"]}}"#,
+        1,
+    );
+    let path = overlay_path(&bindir);
+    let (c, _) = run_with_path(&dir, ["init", "--non-interactive"], path.clone());
+    assert_eq!(c, 0, "init must pass before any policy is declared");
+    set_adapter_policy(&dir, "adapters:\n  knip:\n    policy: required\n");
+    let (cc, v) = check_json(&dir, path);
+    assert_eq!(cc, 1, "required adapter with issues must fail check: {v}");
+    let knip = finding_named(&v, "adapter:knip");
+    assert_eq!(knip.get("passed").and_then(|p| p.as_bool()), Some(false));
+    let detail = knip.get("detail").and_then(|d| d.as_str()).unwrap_or("");
+    assert!(
+        detail.contains("required"),
+        "must cite the policy: {detail}"
+    );
+    assert!(
+        detail.contains("fix the reported issues"),
+        "must remediate the issues: {detail}"
+    );
+    assert!(
+        detail.contains("set policy to advisory"),
+        "must offer the advisory escape: {detail}"
+    );
+}
+
+#[test]
+fn required_policy_missing_binary_fails_with_remediation() {
+    let dir = fixture_repo("node-single");
+    let bindir = unique_base("adapters-bin-req-missing");
+    let git_path = Command::new("sh")
+        .args(["-c", "command -v git"])
+        .output()
+        .expect("locate git");
+    let git_bin = String::from_utf8_lossy(&git_path.stdout).trim().to_string();
+    assert!(!git_bin.is_empty(), "git must exist for fixtures");
+    std::os::unix::fs::symlink(&git_bin, bindir.join("git")).expect("link git");
+    let path = bindir.to_string_lossy().to_string();
+    let (c, _) = run_with_path(&dir, ["init", "--non-interactive"], path.clone());
+    assert_eq!(c, 0, "init must pass before any policy is declared");
+    set_adapter_policy(&dir, "adapters:\n  knip:\n    policy: required\n");
+    let (cc, v) = check_json(&dir, path);
+    assert_eq!(cc, 1, "required adapter without a binary must fail: {v}");
+    let knip = finding_named(&v, "adapter:knip");
+    assert_eq!(knip.get("passed").and_then(|p| p.as_bool()), Some(false));
+    let detail = knip.get("detail").and_then(|d| d.as_str()).unwrap_or("");
+    assert!(
+        detail.contains("required"),
+        "must cite the policy: {detail}"
+    );
+    assert!(
+        detail.contains("install the adapter"),
+        "must remediate with install: {detail}"
+    );
+    assert!(
+        detail.contains("npm install --save-dev knip"),
+        "must keep the install hint: {detail}"
+    );
+}
+
+#[test]
+fn explicit_advisory_policy_with_issues_still_passes() {
+    let dir = fixture_repo("node-single");
+    let bindir = unique_base("adapters-bin-exp-advisory");
+    write_shim(
+        &bindir,
+        "knip",
+        r#"{"files": ["src/old.ts"], "exports": {"src/a.ts": ["unusedFn"]}}"#,
+        1,
+    );
+    let path = overlay_path(&bindir);
+    let (c, _) = run_with_path(&dir, ["init", "--non-interactive"], path.clone());
+    assert_eq!(c, 0);
+    set_adapter_policy(&dir, "adapters:\n  knip:\n    policy: advisory\n");
+    let (cc, v) = check_json(&dir, path);
+    assert_eq!(cc, 0, "explicit advisory keeps evidence-only behavior: {v}");
+    let knip = finding_named(&v, "adapter:knip");
+    assert_eq!(knip.get("passed").and_then(|p| p.as_bool()), Some(true));
+    let detail = knip.get("detail").and_then(|d| d.as_str()).unwrap_or("");
+    assert!(
+        detail.contains("2 issue(s)"),
+        "evidence must show: {detail}"
+    );
+}
+
+#[test]
+fn unknown_adapter_name_fails_closed() {
+    let dir = fixture_repo("node-single");
+    let (c, _) = run(&dir, ["init", "--non-interactive"]);
+    assert_eq!(c, 0);
+    set_adapter_policy(&dir, "adapters:\n  frobnicate:\n    policy: advisory\n");
+    let (cc, out) = run(&dir, ["check", "--json"]);
+    assert_eq!(cc, 1, "unknown adapter name must fail closed: {out}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("check --json");
+    let policy = finding_named(&v, "adapter policy");
+    assert_eq!(policy.get("passed").and_then(|p| p.as_bool()), Some(false));
+    let detail = policy.get("detail").and_then(|d| d.as_str()).unwrap_or("");
+    assert!(detail.contains("unknown adapter"), "{detail}");
+    assert!(
+        detail.contains("frobnicate"),
+        "must name the typo: {detail}"
+    );
+    assert!(
+        detail.contains("known adapters"),
+        "must list valid names: {detail}"
+    );
+}
+
+#[test]
+fn invalid_policy_value_fails() {
+    let dir = fixture_repo("node-single");
+    let (c, _) = run(&dir, ["init", "--non-interactive"]);
+    assert_eq!(c, 0);
+    set_adapter_policy(&dir, "adapters:\n  knip:\n    policy: mandatory\n");
+    let (cc, out) = run(&dir, ["check", "--json"]);
+    assert_eq!(cc, 1, "invalid policy value must fail: {out}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("check --json");
+    let policy = finding_named(&v, "adapter policy");
+    assert_eq!(policy.get("passed").and_then(|p| p.as_bool()), Some(false));
+    let detail = policy.get("detail").and_then(|d| d.as_str()).unwrap_or("");
+    assert!(detail.contains("invalid policy"), "{detail}");
+    assert!(
+        detail.contains("mandatory"),
+        "must quote the value: {detail}"
+    );
+    assert!(
+        detail.contains("\"required\""),
+        "must name valid values: {detail}"
+    );
+}
+
+#[test]
+fn default_without_table_stays_advisory() {
+    let dir = fixture_repo("node-single");
+    let bindir = unique_base("adapters-bin-default");
+    write_shim(
+        &bindir,
+        "knip",
+        r#"{"files": ["src/old.ts"], "exports": {"src/a.ts": ["unusedFn"]}}"#,
+        1,
+    );
+    let path = overlay_path(&bindir);
+    let (c, _) = run_with_path(&dir, ["init", "--non-interactive"], path.clone());
+    assert_eq!(c, 0);
+    let yml = std::fs::read_to_string(dir.join(".engineering/consistency.yml")).unwrap();
+    assert!(
+        !yml.contains("adapters:"),
+        "fresh repos declare no policies:\n{yml}"
+    );
+    let (cc, v) = check_json(&dir, path);
+    assert_eq!(cc, 0, "absent table keeps advisory behavior: {v}");
+    let knip = finding_named(&v, "adapter:knip");
+    assert_eq!(knip.get("passed").and_then(|p| p.as_bool()), Some(true));
+}
+
+#[test]
+fn required_but_inapplicable_fails_closed() {
+    let dir = fixture_repo("rust-single");
+    let (c, _) = run(&dir, ["init", "--non-interactive"]);
+    let _ = c; // rust fixture may fail the version-source check; files still land.
+    assert!(dir.join(".engineering/consistency.yml").exists());
+    set_adapter_policy(&dir, "adapters:\n  knip:\n    policy: required\n");
+    let (_, out) = run(&dir, ["check", "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&out).expect("check --json");
+    let knip = finding_named(&v, "adapter:knip");
+    assert_eq!(
+        knip.get("passed").and_then(|p| p.as_bool()),
+        Some(false),
+        "required adapter that never runs must fail closed"
+    );
+    let detail = knip.get("detail").and_then(|d| d.as_str()).unwrap_or("");
+    assert!(detail.contains("did not run"), "{detail}");
+}

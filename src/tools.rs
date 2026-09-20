@@ -238,7 +238,7 @@ pub(crate) fn build_plan(root: &std::path::Path) -> Vec<PlanSection> {
 
 fn empty_report(root: &std::path::Path) -> crate::scan::ScanReport {
     crate::scan::ScanReport {
-        schema: "aicontext/scan/v1".to_string(),
+        schema: crate::scan::SCAN_SCHEMA.to_string(),
         git: crate::scan::GitInfo {
             root: root.to_string_lossy().to_string(),
             head: None,
@@ -261,11 +261,18 @@ fn empty_report(root: &std::path::Path) -> crate::scan::ScanReport {
         version_candidates: Vec::new(),
         docs: Vec::new(),
         ci: Vec::new(),
+        subprojects: Vec::new(),
+        subprojects_source: crate::scan::SubprojectsSource {
+            mode: "none".to_string(),
+            declared: Vec::new(),
+            unresolved: Vec::new(),
+            containers: Vec::new(),
+        },
     }
 }
 
 pub fn cmd_plan(json: bool) -> anyhow::Result<i32> {
-    let root = crate::scan::current_dir_root()?;
+    let root = crate::scan::resolve_project_root()?;
     let sections = build_plan(&root);
     if json {
         #[derive(Serialize)]
@@ -309,7 +316,7 @@ pub fn cmd_plan(json: bool) -> anyhow::Result<i32> {
 }
 
 pub fn cmd_status(json: bool) -> anyhow::Result<i32> {
-    let root = crate::scan::current_dir_root()?;
+    let root = crate::scan::resolve_project_root()?;
     let _ = root;
     let mut tools = detect_core_tools();
     // Overlay registry ownership: managed tools report managed_by=managed

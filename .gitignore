@@ -7,3 +7,7 @@ fixtures/*/target/
 fixtures/*/Cargo.lock
 .aicontext/
 .tgrep/
+
+# Nested fixture build artifacts (workspace fixtures)
+fixtures/**/target/
+fixtures/**/Cargo.lock

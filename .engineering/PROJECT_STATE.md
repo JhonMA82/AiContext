@@ -1,13 +1,15 @@
 # Project State
 
 <!-- aicontext:generated:start -->
-Last synchronized commit: fa29c19
+Last synchronized commit: 545fc8e
 Version: 0.1.0 (Cargo.toml)
 Package manager: cargo (Cargo.lock)
 Complexity: small
-Source files: 48 | LOC: ~6825
+Source files: 85 | LOC: ~13919
+Test functions: 142 (src: 7, tests: 135)
 
 Important paths:
+
 - README.md
 - CHANGELOG.md
 - AGENTS.md
@@ -26,7 +28,7 @@ skill for agents. It replaces repetitive exploration, never the development work
 - CLI: init, scan, sync, status, check, doctor, search, tools plan/status/install/update/uninstall, agent install/uninstall pi, completion
 - Skill `aicontext-adopt` (embedded in the binary, installed per agent)
 - Versioned JSON contracts in `schemas/`; error envelope with remediation
-- 40 tests green (integration per command + unit); no network in tests
+- Integration tests per command plus unit tests; exact test-function counts are a scanned fact in the generated block
 
 ## Constraints
 
@@ -34,4 +36,5 @@ skill for agents. It replaces repetitive exploration, never the development work
 - Exact pinned dependencies and committed Cargo.lock
 - Managed installs only into the user prefix with prior confirmation; project manifests are never touched
 - English for code/comments/identifiers/commits; Spanish for documentation prose
+- Tests run fully offline (no network in tests)
 <!-- aicontext:curated:end -->
