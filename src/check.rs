@@ -152,6 +152,16 @@ pub fn run_check(root: &Path, json: bool) -> Result<i32> {
                 passed: patterns_ok,
                 detail: cfg.state.patterns.clone(),
             });
+            // 6b. subprojects manifest: strict v1 shape (unknown keys fail)
+            // and closed status enum. Absent passes; detection
+            // reconciliation (missing/stale entries, adopted lifecycle) is
+            // WU4's gate, not this shape check.
+            let (sub_ok, sub_detail) = crate::state::check_subprojects_file(root);
+            findings.push(Finding {
+                name: "subprojects".to_string(),
+                passed: sub_ok,
+                detail: sub_detail,
+            });
         }
         Err(e) => {
             findings.push(Finding {

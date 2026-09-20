@@ -6,6 +6,18 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ### Agregado
 
+- Manifiesto de subproyectos (`aicontext/subprojects/v1`, schema nuevo en
+  `schemas/subprojects-v1.json`): `init` siembra `.engineering/subprojects.yml`
+  con cada path detectado como `status: pending` (nunca reescribe un archivo
+  existente y `sync` tampoco lo toca; el skill llena `purpose`/`status` y
+  `sync` proyecta el `purpose` en la tabla de `PROJECT_STATE.md`). `check`
+  suma el gate `subprojects`: claves desconocidas y estados fuera del enum
+  cerrado (`pending`/`adopted`) fallan con los ofensores exactos; sin
+  manifiesto el gate pasa y un schema futuro se omite sin bloquear.
+  `tests/subprojects_manifest.rs` (8 tests) cubre el seed byte-exacto, la
+  no-reescritura en `init`/`sync`, la proyección del `purpose`, los rechazos
+  (estado, claves, YAML inválido) y la validación contra el schema.
+
 - Búsqueda con scope en monorepos: `search --in <path>` restringe todos los
   backends (tgrep/rg/git grep y ast-grep) a un path repo-relativo existente,
   filtra los hits de knowledge por prefijo y, en `--impact`, intenta la

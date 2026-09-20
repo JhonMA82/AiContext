@@ -23,18 +23,25 @@ pub const CONTEXT_END: &str = "<!-- aicontext:context:end -->";
 /// just a normal repository and gets no `AGENTS.md` block.
 const ROUTING_MIN_SUBPROJECTS: usize = 2;
 const AGENTS_FILE: &str = "AGENTS.md";
-/// Contract id and location of the subproject manifest. WU3 owns seeding,
-/// purpose/drift semantics and validation; here it is read-only.
+/// Contract id and location of the subproject manifest. `init` seeds it
+/// (never rewrites); `check` enforces the strict v1 shape and the closed
+/// status enum. Unknown schemas stay forward-compatible (read as absent).
 const SUBPROJECTS_SCHEMA: &str = "aicontext/subprojects/v1";
 const SUBPROJECTS_FILE: &str = ".engineering/subprojects.yml";
+/// Closed adoption lifecycle: the skill moves entries from `pending` to
+/// `adopted`. Anything else fails `check` (WU4 adds the lifecycle gates).
+const SUBPROJECT_STATUSES: [&str; 2] = ["pending", "adopted"];
 const CELL_MAX_CHARS: usize = 120;
 const EMPTY_CELL: &str = "—";
 
-/// Minimal forward-compatible view of `.engineering/subprojects.yml`
-/// (`aicontext/subprojects/v1`: path → {purpose, status}). Every field
-/// defaults so a partial file still parses; a missing, unreadable or
-/// unknown-schema file degrades to `None` instead of failing the render.
+/// Strict v1 view of `.engineering/subprojects.yml`
+/// (`aicontext/subprojects/v1`: path → {purpose, status}). Unknown keys
+/// fail `check` (the typo that silently passes is the gap this closes);
+/// schema evolution means a new schema id, not looser parsing. Readers
+/// that must stay forward-compatible (`status` counts) keep their own
+/// tolerant parse.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SubprojectsFile {
     #[serde(default)]
     pub(crate) schema: String,
@@ -42,10 +49,11 @@ pub(crate) struct SubprojectsFile {
     pub(crate) subprojects: BTreeMap<String, SubprojectEntry>,
 }
 
-/// Per-subproject entry. `purpose` feeds the routing table; `status` feeds
-/// the `status` counts (`adopted`/`pending`). WU3 owns seeding, purpose
-/// drift and the closed enum; here unknown values are ignored.
+/// Per-subproject entry. `purpose` feeds the routing table (editing it is
+/// genuine drift that `sync` resolves); `status` feeds the `status` counts
+/// and must be one of [`SUBPROJECT_STATUSES`].
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SubprojectEntry {
     #[serde(default)]
     pub(crate) purpose: String,
@@ -53,8 +61,10 @@ pub(crate) struct SubprojectEntry {
     pub(crate) status: String,
 }
 
-/// Reads the subproject manifest when present and well-formed. Unknown
-/// schemas are ignored (forward-compatible), never fatal.
+/// Reads the subproject manifest when present and well-formed. A missing,
+/// unreadable, unknown-schema or (as of the strict v1 shape) unknown-key
+/// file degrades to `None` instead of failing the render; `check` is the
+/// gate that reports those problems.
 fn load_subprojects_file(root: &Path) -> Option<SubprojectsFile> {
     let text = std::fs::read_to_string(root.join(SUBPROJECTS_FILE)).ok()?;
     let file: SubprojectsFile = serde_yaml::from_str(&text).ok()?;
@@ -62,6 +72,128 @@ fn load_subprojects_file(root: &Path) -> Option<SubprojectsFile> {
         return None;
     }
     Some(file)
+}
+
+/// Result of the seed-once `subprojects.yml` handling (human-readable,
+// printed by `init`; the machine contracts stay unchanged).
+struct SeedOutcome {
+    note: String,
+}
+
+/// Seeds `.engineering/subprojects.yml` with every detected subproject path
+/// as `status: pending`. The skill later fills `purpose` and moves entries
+/// to `adopted`. An existing file is never rewritten — not by `init`, not
+/// by `sync` — so hand-written purposes and adoptions survive every run.
+fn seed_subprojects_file(root: &Path, subprojects: &[Subproject]) -> Result<SeedOutcome> {
+    if subprojects.is_empty() {
+        return Ok(SeedOutcome {
+            note: "subprojects manifest not seeded: no subprojects detected".to_string(),
+        });
+    }
+    let path = root.join(SUBPROJECTS_FILE);
+    if path.exists() {
+        return Ok(SeedOutcome {
+            note: "subprojects manifest left intact (never rewritten)".to_string(),
+        });
+    }
+    let mut ordered: Vec<&Subproject> = subprojects.iter().collect();
+    ordered.sort_by(|a, b| a.path.cmp(&b.path));
+    let mut out = String::from(
+        "# Subproject adoption tracker (aicontext/subprojects/v1).\n# `init` seeds detected paths as `pending`; the adoption skill fills\n# `purpose` and moves entries to `adopted`. This file is never rewritten.\n",
+    );
+    out.push_str("schema: aicontext/subprojects/v1\nsubprojects:\n");
+    for s in &ordered {
+        out.push_str(&format!(
+            "  {}:\n    purpose: \"\"\n    status: pending\n",
+            s.path
+        ));
+    }
+    std::fs::write(&path, out)?;
+    Ok(SeedOutcome {
+        note: format!(
+            "subprojects manifest seeded with {} entr{}",
+            ordered.len(),
+            if ordered.len() == 1 { "y" } else { "ies" },
+        ),
+    })
+}
+
+/// Strict `check` gate for the subproject manifest: unknown keys (typos)
+/// and status values outside the closed enum fail with the exact offenders.
+/// An absent file passes (nothing declared); an unknown schema passes as
+/// skipped (forward-compatible); an unreadable or unparseable file fails
+/// closed. Detection reconciliation (missing/stale entries, adopted without
+/// a real nested context) belongs to WU4, not to this shape gate.
+pub(crate) fn check_subprojects_file(root: &Path) -> (bool, String) {
+    let path = root.join(SUBPROJECTS_FILE);
+    if !path.exists() {
+        return (
+            true,
+            "no subprojects manifest — nothing to validate".to_string(),
+        );
+    }
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) => {
+            return (
+                false,
+                format!("{SUBPROJECTS_FILE} is unreadable ({e}) — fix permissions or delete it"),
+            )
+        }
+    };
+    let value: serde_yaml::Value = match serde_yaml::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                false,
+                format!(
+                    "{SUBPROJECTS_FILE} is not valid YAML ({e}) — fix it or delete it and run `aicontext init` to reseed"
+                ),
+            )
+        }
+    };
+    let schema = value.get("schema").and_then(|s| s.as_str()).unwrap_or("");
+    if !schema.is_empty() && schema != SUBPROJECTS_SCHEMA {
+        return (
+            true,
+            format!("unknown schema {schema} — skipped (forward-compatible)"),
+        );
+    }
+    let file: SubprojectsFile = match serde_yaml::from_value(value) {
+        Ok(f) => f,
+        Err(e) => {
+            return (
+                false,
+                format!("{SUBPROJECTS_FILE} has unknown keys or a bad shape ({e}) — fix or reseed"),
+            )
+        }
+    };
+    let mut bad: Vec<String> = file
+        .subprojects
+        .iter()
+        .filter(|(_, e)| !SUBPROJECT_STATUSES.contains(&e.status.as_str()))
+        .map(|(p, e)| format!("{p}: status {:?}", e.status))
+        .collect();
+    bad.sort();
+    if bad.is_empty() {
+        (
+            true,
+            format!(
+                "{} subproject(s) validated: {}",
+                file.subprojects.len(),
+                SUBPROJECT_STATUSES.join("/"),
+            ),
+        )
+    } else {
+        (
+            false,
+            format!(
+                "invalid status (expected {}): {}",
+                SUBPROJECT_STATUSES.join(" or "),
+                bad.join(", "),
+            ),
+        )
+    }
 }
 
 /// Deterministic markdown table cell: whitespace and newlines collapse to
@@ -639,6 +771,11 @@ pub fn cmd_init(profile: Option<String>, _non_interactive: bool, json: bool) -> 
 
     ensure_gitignore(&root)?;
 
+    // Seed the adoption tracker before the router reads it: detected paths
+    // enter as `pending`, the skill fills `purpose`/`status` later. An
+    // existing file is never rewritten here or in `sync`.
+    let seed = seed_subprojects_file(&root, &report.subprojects)?;
+
     // The router lives in AGENTS.md (user-owned file): markers only, and
     // only with two or more subprojects. `init` may create the file; `sync`
     // never does.
@@ -671,6 +808,7 @@ pub fn cmd_init(profile: Option<String>, _non_interactive: bool, json: bool) -> 
     } else {
         println!("Initialized AIContext in {}", root.to_string_lossy());
         println!("{}", routing.note);
+        println!("Subprojects: {}", seed.note);
         println!("Semantic TODO: fill Purpose/Capabilities/Constraints in {PROJECT_STATE}, then adopt patterns in {PATTERNS}.");
     }
     Ok(check_code)
@@ -778,8 +916,8 @@ pub fn cmd_status(json: bool) -> Result<i32> {
         Err(_) => ("uninitialized", "unknown"),
     };
     // Subproject adoption counts: only entries whose key matches a detected
-    // subproject path count; an absent or unparseable manifest is 0/0, never
-    // an error (the deterministic pre-WU3 state).
+    // subproject path count; an absent, unreadable or non-v1 manifest is
+    // 0/0, never an error (`check` is the gate that reports those problems).
     let subprojects_file = load_subprojects_file(&root);
     let has_subprojects_file = root.join(SUBPROJECTS_FILE).is_file();
     let detected: Vec<&str> = report.subprojects.iter().map(|s| s.path.as_str()).collect();

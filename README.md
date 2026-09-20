@@ -35,6 +35,18 @@ bloques faltantes) y con <2 subproyectos no se renderiza routing. Fuera
 de los marcadores no se edita nada: los cambios manuales se preservan y
 el puntero legacy sin marcadores se reporta sin reescribirse.
 
+### Manifiesto de subproyectos
+
+`init` siembra `.engineering/subprojects.yml` (`aicontext/subprojects/v1`,
+schema en `schemas/subprojects-v1.json`) con cada path detectado como
+`status: pending` y `purpose` vacío; el skill de adopción llena el
+`purpose` y mueve entradas a `adopted`. El archivo existente **nunca** se
+reescribe (ni `init` ni `sync` lo tocan) y `sync` proyecta el `purpose` en
+la tabla de `PROJECT_STATE.md`. `check` valida la forma estricta: claves
+desconocidas y estados fuera del enum cerrado (`pending`/`adopted`) fallan;
+sin manifiesto no hay nada que validar y un schema futuro se omite sin
+bloquear.
+
 ### Búsqueda con scope
 
 ```bash
