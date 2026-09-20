@@ -118,8 +118,24 @@ pub fn find_git_root(start: &Path) -> Result<PathBuf> {
     Ok(PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()))
 }
 
-pub fn current_dir_root() -> Result<PathBuf> {
-    find_git_root(&std::env::current_dir()?)
+/// Resolves the project root for the current directory: the nearest
+/// ancestor (starting at the cwd itself) containing a project manifest
+/// (`.engineering/aicontext.toml`) — i.e. a nested subproject context
+/// created by `init --recursive` — or, when no manifest is found up the
+/// tree, the git toplevel (the previous behavior, unchanged).
+pub fn resolve_project_root() -> Result<PathBuf> {
+    let cwd = std::env::current_dir()?;
+    let mut dir = cwd.as_path();
+    loop {
+        if dir.join(crate::config::REPO_MANIFEST).is_file() {
+            return Ok(dir.to_path_buf());
+        }
+        match dir.parent() {
+            Some(parent) => dir = parent,
+            None => break,
+        }
+    }
+    find_git_root(&cwd)
 }
 
 /// Extensions that count as source for classification. Vendor/build/output
@@ -926,7 +942,7 @@ pub fn collect_scan(root: &Path) -> Result<ScanReport> {
 }
 
 pub fn cmd_scan(json: bool) -> Result<i32> {
-    let root = current_dir_root()?;
+    let root = resolve_project_root()?;
     let report = collect_scan(&root)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);

@@ -287,7 +287,7 @@ pub fn run_doctor(root: &Path) -> Vec<Diagnostic> {
 }
 
 pub fn cmd_doctor(json: bool) -> Result<i32> {
-    let root = crate::scan::current_dir_root()?;
+    let root = crate::scan::resolve_project_root()?;
     let diags = run_doctor(&root);
     let failed = diags.iter().any(|d| d.status == Status::Fail);
     let code = if failed { 1 } else { 0 };

@@ -27,6 +27,12 @@ pub struct RepoConfig {
     pub repository: RepositorySection,
     #[serde(default)]
     pub subprojects: SubprojectsSection,
+    /// Nested-context marker (WU5). `None` in root manifests; `Some` only
+    /// in manifests created by `init --recursive` inside a detected
+    /// subproject. Optional, so manifests written before it existed keep
+    /// parsing unchanged.
+    #[serde(default)]
+    pub subproject: Option<SubprojectRef>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -172,6 +178,15 @@ pub struct SubprojectsSection {
     pub containers: Vec<String>,
 }
 
+/// Pointer from a nested subproject context back to its parent project
+/// root. `parent` is the repo-relative path from the nested root upward
+/// (`..`, `../..`, …), so tools can navigate without guessing.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SubprojectRef {
+    #[serde(default)]
+    pub parent: String,
+}
+
 fn default_name() -> String {
     "unknown".to_string()
 }
@@ -223,6 +238,7 @@ impl Default for RepoConfig {
             },
             repository: RepositorySection { size: None },
             subprojects: SubprojectsSection::default(),
+            subproject: None,
         }
     }
 }
@@ -296,6 +312,38 @@ extra = []
 containers = []
 "#
     )
+}
+
+/// Version source for a freshly initialized root: the first version file
+/// that exists (npm first, then cargo, Go, Python). The root keeps its
+/// historical `package.json` default; nested contexts use this so a Rust
+/// or Go subproject passes its own `version` gate.
+pub fn version_source_for(dir: &Path) -> &'static str {
+    for candidate in ["package.json", "Cargo.toml", "go.mod", "pyproject.toml"] {
+        if dir.join(candidate).exists() {
+            return candidate;
+        }
+    }
+    "package.json"
+}
+
+/// Nested-context manifest: the minimal manifest with an explicit version
+/// source (so a Rust or Go subproject passes its own `version` gate) and
+/// the `[subproject]` parent pointer (`parent_rel` is the repo-relative
+/// path from the nested root back to the parent root).
+pub fn minimal_nested_toml(
+    project_name: &str,
+    profile: &str,
+    version_source: &str,
+    parent_rel: &str,
+) -> String {
+    let mut out = minimal_toml(project_name, profile).replacen(
+        "source = \"package.json\"",
+        &format!("source = \"{version_source}\""),
+        1,
+    );
+    out.push_str(&format!("\n[subproject]\nparent = \"{parent_rel}\"\n"));
+    out
 }
 
 pub fn minimal_consistency(commands: &[String]) -> String {

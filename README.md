@@ -51,6 +51,22 @@ fallan) y un `adopted` sin contexto anidado real
 advisory. Sin manifiesto no hay nada que validar y un schema futuro se
 omite sin bloquear.
 
+### Contextos anidados (`init --recursive`)
+
+```bash
+aicontext init --recursive
+```
+
+Por cada subproyecto detectado (ordenado por path) crea su propio
+`.engineering/` (manifiesto con sección `[subproject]` que apunta al root
+padre, estado generado, placeholder de patrones, stub de consistencia) y el
+puntero de contexto marcado en su propio `AGENTS.md` — solo si ese archivo
+ya existe, nunca se crea. Todo es seed-once: las repeticiones solo
+refrescan contenido generado. Además, cada comando resuelve su root al
+manifiesto más cercano hacia arriba (`resolve_project_root()`): dentro de
+un subproyecto con contexto anidado se opera sobre él, si no sobre el git
+toplevel como antes.
+
 ### Búsqueda con scope
 
 ```bash

@@ -6,6 +6,20 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ### Agregado
 
+- `init --recursive` y resolución anidada: por cada subproyecto detectado
+  crea su `.engineering/` (manifiesto con `[subproject]` y puntero `parent`
+  al root, estado generado, patrones, stub de consistencia; fuente de
+  versión detectada para que cada contexto pase su propio `check`) y el
+  puntero de contexto en su `AGENTS.md` existente (nunca creado). Todo
+  seed-once y byte-idempotente. `resolve_project_root()` sustituye al git
+  toplevel directo: el manifiesto más cercano hacia arriba gana.
+  `tests/recursive_init.rs` (9 tests) cubre el seed con punteros, la
+  idempotencia, el puntero-solo-contexto, la no-creación de `AGENTS.md`,
+  la resolución anidada, el `check` por contexto, la adopción grounded y
+  el `init` desde un subdirectorio. Limitación conocida: el scan anidado
+  aún cuenta archivos repo-wide (el stub se siembra del mismo reporte, así
+  que cada contexto converge en su `check`).
+
 - Manifiesto de subproyectos (`aicontext/subprojects/v1`, schema nuevo en
   `schemas/subprojects-v1.json`): `init` siembra `.engineering/subprojects.yml`
   con cada path detectado como `status: pending` (nunca reescribe un archivo

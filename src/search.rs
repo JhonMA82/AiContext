@@ -395,7 +395,7 @@ pub fn cmd_search(
     scope: Option<String>,
     subproject: Option<String>,
 ) -> Result<i32> {
-    let root = crate::scan::current_dir_root()?;
+    let root = crate::scan::resolve_project_root()?;
     let scope = resolve_scope(&root, scope.as_deref(), subproject.as_deref())?;
     let mode = if impact {
         "impact"

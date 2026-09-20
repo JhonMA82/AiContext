@@ -23,6 +23,9 @@ pub const CONTEXT_END: &str = "<!-- aicontext:context:end -->";
 /// just a normal repository and gets no `AGENTS.md` block.
 pub(crate) const ROUTING_MIN_SUBPROJECTS: usize = 2;
 const AGENTS_FILE: &str = "AGENTS.md";
+/// Placeholder for a fresh `PATTERNS.md`: semantic content belongs to the
+/// adoption skill. Shared by root and nested init so both seed identical bytes.
+const PATTERNS_PLACEHOLDER: &str = "# Patterns\n\n> Semantic adoption (`aicontext-adopt` skill) fills this file.\n> Status values: preferred | observed | legacy | exception | protected.\n";
 /// Contract id and location of the subproject manifest. `init` seeds it
 /// (never rewrites); `check` enforces the strict v1 shape and the closed
 /// status enum. Unknown schemas stay forward-compatible (read as absent).
@@ -731,8 +734,113 @@ fn update_agents_routing(
     })
 }
 
-pub fn cmd_init(profile: Option<String>, _non_interactive: bool, json: bool) -> Result<i32> {
-    let root = scan::current_dir_root()?;
+/// Outcome of one nested subproject initialization (WU5).
+struct NestedOutcome {
+    note: String,
+}
+
+/// Initializes the nested `.engineering/` context of one detected
+/// subproject: manifest with the `[subproject]` parent pointer, generated
+/// state, patterns placeholder and consistency stub (all seed-once, never
+/// overwritten), plus the marked context pointer in the subproject's own
+/// `AGENTS.md` when that file already exists — never created. Reruns only
+/// refresh generated content, so the operation is byte-idempotent.
+///
+/// Known limitation: the nested scan still runs repo-wide `git` commands,
+/// so counts (tracked files, source files) cover the whole monorepo. The
+/// nested context stays self-consistent (its stub is seeded from the same
+/// report, so its own `check` converges); scoping the scan to the subtree
+/// is a follow-up.
+fn init_nested(root: &Path, sub: &Subproject, profile: &str) -> Result<NestedOutcome> {
+    let nested = root.join(&sub.path);
+    let eng = nested.join(".engineering");
+    std::fs::create_dir_all(&eng)?;
+    std::fs::create_dir_all(eng.join("rules/ast-grep"))?;
+    let mut seeded = 0usize;
+
+    // Parent pointer: one `..` per path depth (`apps/web` → `../..`).
+    let depth = sub.path.split('/').count();
+    let parent_rel = vec![".."; depth].join("/");
+    let manifest_path = nested.join(REPO_MANIFEST);
+    if !manifest_path.exists() {
+        let name = repo_name_from_root(&nested);
+        let source = config::version_source_for(&nested);
+        std::fs::write(
+            &manifest_path,
+            config::minimal_nested_toml(&name, profile, source, &parent_rel),
+        )?;
+        seeded += 1;
+    }
+    // Context pointer per subproject: refresh in place when marked, insert
+    // when missing, report a legacy unmarked pointer without touching it —
+    // and never create the file. A nested project is a single project, so
+    // no routing block is ever rendered here. This runs before the scan so
+    // the seeded state already covers the pointer (no self-staleness).
+    let agents_path = nested.join(AGENTS_FILE);
+    let pointer = match std::fs::read_to_string(&agents_path) {
+        Err(_) => "no AGENTS.md — pointer skipped (never created)".to_string(),
+        Ok(text) => {
+            let rendered = render_context_block();
+            if extract_block(&text, CONTEXT_START, CONTEXT_END) == Some(rendered.as_str()) {
+                "context pointer already up to date".to_string()
+            } else if crate::agent::legacy_pointer_present(&text) {
+                "legacy pointer left untouched (unmarked)".to_string()
+            } else {
+                let (next, placement) = upsert_block(&text, &rendered, CONTEXT_START, CONTEXT_END);
+                if next == text {
+                    "context pointer already up to date".to_string()
+                } else {
+                    std::fs::write(&agents_path, next)?;
+                    format!("context pointer {}", placement_phrase(placement))
+                }
+            }
+        }
+    };
+
+    let report = scan::collect_scan(&nested)?;
+    let consistency_path = nested.join(CONSISTENCY);
+    if !consistency_path.exists() {
+        std::fs::write(
+            &consistency_path,
+            config::minimal_consistency(&report.commands),
+        )?;
+        seeded += 1;
+    }
+    let patterns_path = nested.join(PATTERNS);
+    if !patterns_path.exists() {
+        std::fs::write(&patterns_path, PATTERNS_PLACEHOLDER)?;
+        seeded += 1;
+    }
+    // PROJECT_STATE.md — preserve curated, refresh generated.
+    let state_path = nested.join(PROJECT_STATE);
+    let curated = std::fs::read_to_string(&state_path)
+        .ok()
+        .as_deref()
+        .and_then(extract_curated);
+    let generated = generated_block(&report);
+    std::fs::write(
+        &state_path,
+        render_project_state(&generated, curated.as_deref()),
+    )?;
+
+    let _ = ensure_gitignore(&nested)?;
+
+    Ok(NestedOutcome {
+        note: if seeded > 0 {
+            format!("nested context seeded ({seeded} file(s)); {pointer}")
+        } else {
+            format!("nested context left intact; {pointer}")
+        },
+    })
+}
+
+pub fn cmd_init(
+    profile: Option<String>,
+    _non_interactive: bool,
+    json: bool,
+    recursive: bool,
+) -> Result<i32> {
+    let root = scan::resolve_project_root()?;
     let profile = profile.unwrap_or_else(|| "auto".to_string());
     let eng = root.join(".engineering");
     std::fs::create_dir_all(&eng)?;
@@ -758,10 +866,7 @@ pub fn cmd_init(profile: Option<String>, _non_interactive: bool, json: bool) -> 
     // PATTERNS.md placeholder (semantic content belongs to the skill).
     let patterns_path = root.join(PATTERNS);
     if !patterns_path.exists() {
-        std::fs::write(
-            &patterns_path,
-            "# Patterns\n\n> Semantic adoption (`aicontext-adopt` skill) fills this file.\n> Status values: preferred | observed | legacy | exception | protected.\n",
-        )?;
+        std::fs::write(&patterns_path, PATTERNS_PLACEHOLDER)?;
     }
     // PROJECT_STATE.md — preserve curated, refresh generated.
     let state_path = root.join(PROJECT_STATE);
@@ -793,6 +898,22 @@ pub fn cmd_init(profile: Option<String>, _non_interactive: bool, json: bool) -> 
         RoutingMode::Init,
     )?;
 
+    // `--recursive`: one nested context per detected subproject (ordered by
+    // path). Each gets its own `.engineering/` (manifest with the
+    // `[subproject]` parent pointer, state, patterns, consistency stub) and
+    // a context pointer in its own `AGENTS.md` when that file already
+    // exists — never created. Everything here is seed-once: reruns only
+    // refresh generated content, like the root flow.
+    let mut nested_notes: Vec<String> = Vec::new();
+    if recursive {
+        let mut ordered: Vec<&Subproject> = report.subprojects.iter().collect();
+        ordered.sort_by(|a, b| a.path.cmp(&b.path));
+        for sub in ordered {
+            let outcome = init_nested(&root, sub, &profile)?;
+            nested_notes.push(format!("{}: {}", sub.path, outcome.note));
+        }
+    }
+
     // Run check to report what is still missing.
     let check_code = crate::check::run_check(&root, json)?;
     if json {
@@ -815,13 +936,16 @@ pub fn cmd_init(profile: Option<String>, _non_interactive: bool, json: bool) -> 
         println!("Initialized AIContext in {}", root.to_string_lossy());
         println!("{}", routing.note);
         println!("Subprojects: {}", seed.note);
+        for note in &nested_notes {
+            println!("  {note}");
+        }
         println!("Semantic TODO: fill Purpose/Capabilities/Constraints in {PROJECT_STATE}, then adopt patterns in {PATTERNS}.");
     }
     Ok(check_code)
 }
 
 pub fn cmd_sync(check_only: bool, json: bool) -> Result<i32> {
-    let root = scan::current_dir_root()?;
+    let root = scan::resolve_project_root()?;
     let cfg = RepoConfig::load(&root)
         .map_err(|e| AiError::new("NOT_INITIALIZED", format!("{e:#}"), Some("aicontext init")))?;
     let state_path: PathBuf = cfg.state_path(&root);
@@ -905,7 +1029,7 @@ pub fn cmd_sync(check_only: bool, json: bool) -> Result<i32> {
 }
 
 pub fn cmd_status(json: bool) -> Result<i32> {
-    let root = scan::current_dir_root()?;
+    let root = scan::resolve_project_root()?;
     let cfg = RepoConfig::load(&root);
     let report = scan::collect_scan(&root)?;
     let (state_label, last_check) = match &cfg {

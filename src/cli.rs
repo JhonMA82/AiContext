@@ -21,6 +21,9 @@ pub enum Command {
         non_interactive: bool,
         #[arg(long, default_value_t = false)]
         json: bool,
+        /// Also initialize a nested context per detected subproject
+        #[arg(long, default_value_t = false)]
+        recursive: bool,
     },
     /// Collect deterministic facts about the repo (read-only)
     Scan {

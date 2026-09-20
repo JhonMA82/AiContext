@@ -871,7 +871,7 @@ fn parse_match_array(bytes: &[u8]) -> Option<Vec<(String, String)>> {
 }
 
 pub fn cmd_check(json: bool) -> Result<i32> {
-    let root = scan::current_dir_root()?;
+    let root = scan::resolve_project_root()?;
     // Fast path: not initialized at all.
     if !root.join(REPO_MANIFEST).exists() {
         let err = AiError::new(

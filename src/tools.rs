@@ -272,7 +272,7 @@ fn empty_report(root: &std::path::Path) -> crate::scan::ScanReport {
 }
 
 pub fn cmd_plan(json: bool) -> anyhow::Result<i32> {
-    let root = crate::scan::current_dir_root()?;
+    let root = crate::scan::resolve_project_root()?;
     let sections = build_plan(&root);
     if json {
         #[derive(Serialize)]
@@ -316,7 +316,7 @@ pub fn cmd_plan(json: bool) -> anyhow::Result<i32> {
 }
 
 pub fn cmd_status(json: bool) -> anyhow::Result<i32> {
-    let root = crate::scan::current_dir_root()?;
+    let root = crate::scan::resolve_project_root()?;
     let _ = root;
     let mut tools = detect_core_tools();
     // Overlay registry ownership: managed tools report managed_by=managed
