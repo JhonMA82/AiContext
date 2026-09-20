@@ -197,7 +197,7 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
 
 - [x] WU1 detección + `scan/v2` — commit `b5f7347` (`feat: detect monorepo subprojects with scan/v2 contract`)
 - [x] WU2 router en `AGENTS.md` — commit `f322801` (`feat: render routing blocks in AGENTS.md and subproject table in PROJECT_STATE`)
-- [ ] WU3 `subprojects.yml`
+- [x] WU3 `subprojects.yml` — commit pendiente (`feat: seed subprojects manifest and validate its shape`)
 - [ ] WU4 gates de `check`
 - [ ] WU5 `init --recursive`
 - [x] WU6 `search` con scope — commit `ca8369a` (`feat: add scoped search and subproject adoption counts`)
@@ -232,9 +232,15 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
   advisory STALE_PROJECT_STATE, se refresca en la chore sync post-cierre). `schemas/search-v1.json`
   suma `scope`/`subproject` opcionales; `schemas/status-v1.json` nuevo (`aicontext/status/v1`).
 
+- WU3 (seed + validación): `cargo test` ⇒ 118 passed (17 suites) — los 8 tests de
+  `tests/subprojects_manifest.rs` (seed byte-exacto, no-reescritura en `init`/`sync`,
+  proyección del `purpose`, rechazos de estado/claves/YAML inválido, validación contra
+  `schemas/subprojects-v1.json`); `cargo fmt --check` limpio. Lección: el primer `init`
+  en un monorepo reporta stale por diseño (crear `AGENTS.md` añade un doc escaneado);
+  los tests hacen `init` + `sync` antes de afirmar.
+
 ## Próximo paso
 
-WU6 cerrado (`ca8369a`): PR1 (WU1+WU2+WU6) completo. Siguiente por la cadena aprobada:
-PR2 = WU3 (`subprojects.yml`) + WU4 (gates de `check`) + WU5 (`init --recursive`), y luego
-PR3 = WU7 (skill con scope). Los 3 PRs apuntan a `feat/monorepo-subproject-routing`,
+WU3 cerrado: siguiente **WU4** (gates de `check`), luego WU5 para completar el PR2.
+Después PR3 = WU7. Los 3 PRs apuntan a `feat/monorepo-subproject-routing`,
 se mergean en orden y al final un único PR a `master`.
