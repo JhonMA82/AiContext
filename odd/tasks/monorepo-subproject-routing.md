@@ -200,7 +200,7 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
 - [ ] WU3 `subprojects.yml`
 - [ ] WU4 gates de `check`
 - [ ] WU5 `init --recursive`
-- [ ] WU6 `search` con scope
+- [x] WU6 `search` con scope — commit `ca8369a` (`feat: add scoped search and subproject adoption counts`)
 - [ ] WU7 skill con scope
 
 ## Evidencia de verificación
@@ -225,9 +225,16 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
   la prosa "7 columnas" (conteo viejo); `SubprojectsFile` minimal tolerante
   (`aicontext/subprojects/v1` placeholder, solo lectura — WU3 adopta/valida).
 
+- WU6 (`ca8369a`): `cargo test` ⇒ 110 passed (16 suites) — los 10 tests de `tests/search_scope.rs`
+  (scope de texto/estructura, equivalencia `--subproject`/`--in`, errores con candidatos,
+  determinismo byte a byte, degradación de `--impact`, cwd de CodeGraph, conteos de `status`,
+  validación contra schemas); `cargo fmt --check` limpio; `aicontext check` exit 0 (mismo
+  advisory STALE_PROJECT_STATE, se refresca en la chore sync post-cierre). `schemas/search-v1.json`
+  suma `scope`/`subproject` opcionales; `schemas/status-v1.json` nuevo (`aicontext/status/v1`).
+
 ## Próximo paso
 
-WU2 cerrado (`f322801`, review APPROVED). Siguiente por la cadena aprobada (PR1 = WU1+WU2+WU6): **WU6**
-(`search --in/--subproject` + `status` con adopted/pending, dependencia solo de WU1), que completa el
-PR1. Después PR2 = WU3+WU4+WU5 y PR3 = WU7. Los 3 PRs apuntan a `feat/monorepo-subproject-routing`,
+WU6 cerrado (`ca8369a`): PR1 (WU1+WU2+WU6) completo. Siguiente por la cadena aprobada:
+PR2 = WU3 (`subprojects.yml`) + WU4 (gates de `check`) + WU5 (`init --recursive`), y luego
+PR3 = WU7 (skill con scope). Los 3 PRs apuntan a `feat/monorepo-subproject-routing`,
 se mergean en orden y al final un único PR a `master`.
