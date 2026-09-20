@@ -4,6 +4,8 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-20
+
 ### Agregado
 
 - Skill con scope y skew en `doctor` (WU7): `aicontext-adopt` documenta la
