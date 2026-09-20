@@ -199,7 +199,7 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
 - [x] WU2 router en `AGENTS.md` — commit `f322801` (`feat: render routing blocks in AGENTS.md and subproject table in PROJECT_STATE`)
 - [x] WU3 `subprojects.yml` — commit pendiente (`feat: seed subprojects manifest and validate its shape`)
 - [x] WU4 gates de `check` — commit pendiente (`feat: gate subproject routing lifecycle in check`)
-- [ ] WU5 `init --recursive`
+- [x] WU5 `init --recursive` — commit pendiente (`feat: add recursive init with nested subproject contexts`)
 - [x] WU6 `search` con scope — commit `ca8369a` (`feat: add scoped search and subproject adoption counts`)
 - [ ] WU7 skill con scope
 
@@ -245,8 +245,15 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
   `cargo fmt --check` limpio. Pre-verificado: ningún test existente de `check` usa
   monorepos con init (todos usan fixtures simples), sin regresiones.
 
+- WU5 (`init --recursive` + `resolve_project_root()`): `cargo test` ⇒ 136 passed
+  (19 suites) — los 9 tests de `tests/recursive_init.rs` (seed con punteros `parent`,
+  idempotencia byte a byte, puntero-solo-contexto, no-creación de `AGENTS.md`, resolución
+  anidada, `check` por contexto, adopción grounded, `init` desde subdirectorio);
+  `cargo fmt --check` limpio. PR2 (WU3+WU4+WU5) completo. Limitación conocida registrada:
+  el scan anidado aún cuenta archivos repo-wide (cada contexto converge igual).
+
 ## Próximo paso
 
-WU4 cerrado: siguiente **WU5** (`init --recursive` + `resolve_project_root()`) para completar
-el PR2. Después PR3 = WU7. Los 3 PRs apuntan a `feat/monorepo-subproject-routing`,
-se mergean en orden y al final un único PR a `master`.
+PR2 cerrado. Solo queda **WU7** (skill `aicontext-adopt` con scope + `doctor` de skew,
+PR3). Después, los 3 PRs apuntan a `feat/monorepo-subproject-routing`, se mergean en
+orden y al final un único PR a `master`.
