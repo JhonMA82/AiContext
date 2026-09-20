@@ -33,6 +33,8 @@
         }
       }
     },
-    "note": { "type": "string" }
+    "note": { "type": "string" },
+    "scope": { "type": "string" },
+    "subproject": { "type": "string" }
   }
 }

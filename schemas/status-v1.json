@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aicontext/status/v1",
+  "title": "AIContext status result v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "repo",
+    "state",
+    "head",
+    "complexity",
+    "last_check",
+    "subprojects"
+  ],
+  "properties": {
+    "schema": { "const": "aicontext/status/v1" },
+    "repo": { "type": "string" },
+    "state": { "enum": ["uninitialized", "stale", "synchronized"] },
+    "head": { "type": ["string", "null"] },
+    "complexity": { "type": "string" },
+    "last_check": { "type": "string" },
+    "subprojects": {
+      "type": "object",
+      "required": ["total", "adopted", "pending"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "adopted": { "type": "integer", "minimum": 0 },
+        "pending": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

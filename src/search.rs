@@ -28,6 +28,102 @@ fn truncate(s: &str) -> String {
     out
 }
 
+/// Effective search scope: the normalized path handed to every backend plus
+/// the labels reported in the JSON output (present only when the matching
+/// flag was used).
+struct Scope {
+    /// Repo-relative path for the backends; `.` means the whole repository.
+    path: String,
+    /// `scope` field of `search --json`, present only with `--in`.
+    label: Option<String>,
+    /// `subproject` field of `search --json`, present only with `--subproject`.
+    subproject: Option<String>,
+}
+
+/// Normalizes a `--in`/`--subproject` value into a repo-relative scope:
+/// backslashes become `/`, leading `./` is stripped, a trailing `/` is
+/// dropped and `.`/empty means the whole repository. The result is passed as
+/// the trailing path argument to external backends, so absolute paths, `..`
+/// segments and leading `-` are rejected instead of being interpreted by
+/// grep-likes.
+fn normalize_scope(raw: &str) -> Result<String> {
+    let mut s = raw.trim().replace('\\', "/");
+    while let Some(rest) = s.strip_prefix("./") {
+        s = rest.to_string();
+    }
+    let s = s.trim_end_matches('/').to_string();
+    if s.is_empty() || s == "." {
+        return Ok(".".to_string());
+    }
+    let invalid = s.starts_with('/')
+        || s.starts_with('-')
+        || s.chars().nth(1) == Some(':')
+        || s.split('/').any(|seg| seg == "..");
+    if invalid {
+        return Err(crate::output::AiError::new(
+            "INVALID_SCOPE",
+            format!("scope `{raw}` must be a repo-relative path inside the repository"),
+            None,
+        )
+        .into());
+    }
+    Ok(s)
+}
+
+/// Resolves `--in`/`--subproject` into the effective scope. `--subproject`
+/// is `--in` plus validation: the normalized path must be an exact match of
+/// a detected subproject path, otherwise the error lists the candidates. An
+/// `--in` path must exist under the repository root.
+fn resolve_scope(root: &Path, scope: Option<&str>, subproject: Option<&str>) -> Result<Scope> {
+    let (raw, from_subproject) = match (scope, subproject) {
+        (_, Some(sub)) => (sub, true),
+        (Some(s), None) => (s, false),
+        (None, None) => {
+            return Ok(Scope {
+                path: ".".to_string(),
+                label: None,
+                subproject: None,
+            })
+        }
+    };
+    let normalized = normalize_scope(raw)?;
+    if from_subproject {
+        let (detected, _) = crate::scan::detect_subprojects(root);
+        let candidates: Vec<&str> = detected.iter().map(|s| s.path.as_str()).collect();
+        if !candidates.contains(&normalized.as_str()) {
+            let list = if candidates.is_empty() {
+                "(none detected)".to_string()
+            } else {
+                candidates.join(", ")
+            };
+            return Err(crate::output::AiError::new(
+                "INVALID_SCOPE",
+                format!("`{normalized}` is not a detected subproject; candidates: {list}"),
+                Some("aicontext scan --json"),
+            )
+            .into());
+        }
+        return Ok(Scope {
+            path: normalized.clone(),
+            label: Some(normalized.clone()),
+            subproject: Some(normalized),
+        });
+    }
+    if !root.join(&normalized).exists() {
+        return Err(crate::output::AiError::new(
+            "INVALID_SCOPE",
+            format!("scope `{normalized}` does not exist under the repository root"),
+            None,
+        )
+        .into());
+    }
+    Ok(Scope {
+        path: normalized.clone(),
+        label: Some(normalized),
+        subproject: None,
+    })
+}
+
 /// Parse `path:line:text` lines, tolerating extra colons in text.
 fn parse_grep_lines(output: &str) -> Vec<TextHit> {
     let mut hits = Vec::new();
@@ -69,13 +165,14 @@ fn run_backend(root: &Path, program: &str, args: &[String]) -> Option<Vec<TextHi
 
 /// Literal search with graceful degradation: tgrep -> rg -> git grep.
 /// All three backends run in fixed-strings mode so `--text` (the default)
-/// is truly literal: a query like `a.b` never matches `axb`.
-fn literal_search(root: &Path, query: &str) -> (String, Vec<TextHit>) {
+/// is truly literal: a query like `a.b` never matches `axb`. The trailing
+/// path argument is the scope, so a scoped search never leaves the subtree.
+fn literal_search(root: &Path, scope: &str, query: &str) -> (String, Vec<TextHit>) {
     // Verified against Microsoft tgrep 1.x: `search -n` emits ripgrep-style
     // path:line:text and works without a prebuilt index (uses it when present).
     if crate::tools::detect_tool("tgrep").available {
         let args = [
-            "search", "-F", "-n", "--color", "never", "-e", query, "--", ".",
+            "search", "-F", "-n", "--color", "never", "-e", query, "--", scope,
         ]
         .iter()
         .map(|s| s.to_string())
@@ -96,7 +193,7 @@ fn literal_search(root: &Path, query: &str) -> (String, Vec<TextHit>) {
             "--no-messages",
             "-e",
             query,
-            ".",
+            scope,
         ]
         .iter()
         .map(|s| s.to_string())
@@ -114,7 +211,7 @@ fn literal_search(root: &Path, query: &str) -> (String, Vec<TextHit>) {
         "-e",
         query,
         "--",
-        ".",
+        scope,
     ]
     .iter()
     .map(|s| s.to_string())
@@ -133,11 +230,17 @@ fn literal_search(root: &Path, query: &str) -> (String, Vec<TextHit>) {
 }
 
 /// Level 1 of progressive disclosure: search persisted knowledge first.
-fn knowledge_search(root: &Path, query: &str) -> Vec<KnowledgeHit> {
+/// Hits are filtered to the scoped path prefix before the 10-hit budget is
+/// applied, so a scope that excludes the first file can still surface
+/// matches from the second one.
+fn knowledge_search(root: &Path, scope: &str, query: &str) -> Vec<KnowledgeHit> {
     let mut hits = Vec::new();
     let files = [".engineering/PROJECT_STATE.md", ".engineering/PATTERNS.md"];
     let needle = query.to_lowercase();
     for rel in files {
+        if scope != "." && !rel.starts_with(scope) {
+            continue;
+        }
         let Ok(text) = std::fs::read_to_string(root.join(rel)) else {
             continue;
         };
@@ -157,7 +260,7 @@ fn knowledge_search(root: &Path, query: &str) -> Vec<KnowledgeHit> {
     hits
 }
 
-fn structural_search(root: &Path, pattern: &str) -> Result<Vec<TextHit>> {
+fn structural_search(root: &Path, scope: &str, pattern: &str) -> Result<Vec<TextHit>> {
     // Positive condition first: proceed when present, error otherwise.
     if crate::tools::detect_tool("ast-grep").available {
         // present: continue to the search below
@@ -170,7 +273,7 @@ fn structural_search(root: &Path, pattern: &str) -> Result<Vec<TextHit>> {
         .into());
     }
     let mut cmd = Command::new("ast-grep");
-    cmd.args(["run", "--pattern", pattern, "--json", "."])
+    cmd.args(["run", "--pattern", pattern, "--json", scope])
         .current_dir(root);
     let out = crate::output::command_output(cmd, 30).ok_or_else(|| {
         crate::output::AiError::new(
@@ -231,10 +334,18 @@ enum Impact {
 
 /// Run `codegraph impact <symbol> --json` (verified against 1.5.0).
 /// Read-only: never builds an index; a missing index reports NoIndex.
-fn codegraph_impact(root: &Path, symbol: &str) -> Impact {
+/// The query runs from the scoped directory so the graph answers for the
+/// subproject when it can; a scope the backend cannot serve (missing index,
+/// timeout, absent binary) degrades through the same arms as before.
+fn codegraph_impact(root: &Path, scope: &str, symbol: &str) -> Impact {
     if crate::tools::detect_tool("codegraph").available {
+        let dir = if scope == "." {
+            root.to_path_buf()
+        } else {
+            root.join(scope)
+        };
         let mut cmd = Command::new("codegraph");
-        cmd.args(["impact", symbol, "--json"]).current_dir(root);
+        cmd.args(["impact", symbol, "--json"]).current_dir(dir);
         // Timeout degrades without blaming the index (see Timeout arm).
         let Some(out) = crate::output::command_output(cmd, 30) else {
             return Impact::Timeout;
@@ -281,8 +392,11 @@ pub fn cmd_search(
     structure: bool,
     impact: bool,
     json: bool,
+    scope: Option<String>,
+    subproject: Option<String>,
 ) -> Result<i32> {
     let root = crate::scan::current_dir_root()?;
+    let scope = resolve_scope(&root, scope.as_deref(), subproject.as_deref())?;
     let mode = if impact {
         "impact"
     } else if structure {
@@ -292,17 +406,17 @@ pub fn cmd_search(
     };
     let _ = text_only;
 
-    let knowledge = knowledge_search(&root, &query);
+    let knowledge = knowledge_search(&root, &scope.path, &query);
     let (backend, hits, note) = match mode {
         "structure" => (
             "ast-grep".to_string(),
-            structural_search(&root, &query)?,
+            structural_search(&root, &scope.path, &query)?,
             None,
         ),
-        "impact" => match codegraph_impact(&root, &query) {
+        "impact" => match codegraph_impact(&root, &scope.path, &query) {
             Impact::Graph(hits) => ("codegraph".to_string(), hits, None),
             Impact::NoIndex => {
-                let (backend, hits) = literal_search(&root, &query);
+                let (backend, hits) = literal_search(&root, &scope.path, &query);
                 (
                     backend,
                     hits,
@@ -313,7 +427,7 @@ pub fn cmd_search(
                 )
             }
             Impact::Timeout | Impact::NoBinary => {
-                let (backend, hits) = literal_search(&root, &query);
+                let (backend, hits) = literal_search(&root, &scope.path, &query);
                 (
                     backend,
                     hits,
@@ -322,7 +436,7 @@ pub fn cmd_search(
             }
         },
         _ => {
-            let (b, h) = literal_search(&root, &query);
+            let (b, h) = literal_search(&root, &scope.path, &query);
             (b, h, None)
         }
     };
@@ -336,6 +450,10 @@ pub fn cmd_search(
             knowledge: &'a [KnowledgeHit],
             hits: &'a [TextHit],
             #[serde(skip_serializing_if = "Option::is_none")]
+            scope: &'a Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            subproject: &'a Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             note: &'a Option<String>,
         }
         println!(
@@ -347,6 +465,8 @@ pub fn cmd_search(
                 backend: &backend,
                 knowledge: &knowledge,
                 hits: &hits,
+                scope: &scope.label,
+                subproject: &scope.subproject,
                 note: &note,
             })?
         );

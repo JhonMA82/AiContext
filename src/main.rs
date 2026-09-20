@@ -54,8 +54,10 @@ fn run(cli: Cli) -> Result<i32> {
             text,
             structure,
             impact,
+            scope,
+            subproject,
             json,
-        } => search::cmd_search(query, text, structure, impact, json),
+        } => search::cmd_search(query, text, structure, impact, json, scope, subproject),
         Command::Tools { cmd } => match cmd {
             ToolsCommand::Plan { json } => tools::cmd_plan(json),
             ToolsCommand::Status { json } => tools::cmd_status(json),

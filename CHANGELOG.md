@@ -6,6 +6,23 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ### Agregado
 
+- Búsqueda con scope en monorepos: `search --in <path>` restringe todos los
+  backends (tgrep/rg/git grep y ast-grep) a un path repo-relativo existente,
+  filtra los hits de knowledge por prefijo y, en `--impact`, intenta la
+  consulta de CodeGraph desde el directorio del scope degradando a resultados
+  de texto con scope cuando el grafo no puede servir ese directorio. La salida
+  `aicontext/search/v1` suma `scope` y `subproject` opcionales (presentes solo
+  con la flag) y `--subproject <path>` es `--in` validado contra los
+  subproyectos detectados: un path desconocido falla con exit 5 y lista los
+  candidatos. `status` reporta `detected/adopted/pending` contando solo
+  entradas de `.engineering/subprojects.yml` que matchean un path detectado
+  (manifiesto ausente o ilegible ⇒ 0/0 sin error) en la salida humana y en
+  `aicontext/status/v1` (schema nuevo en `schemas/status-v1.json`).
+  `tests/search_scope.rs` (10 tests) cubre el scope de texto/estructura, la
+  equivalencia `--subproject`/`--in`, los errores con candidatos, el
+  determinismo byte a byte, la degradación de `--impact`, el cwd de CodeGraph,
+  los conteos de `status` y la validación contra los schemas.
+
 - Router de subproyectos en el `AGENTS.md` raíz: con ≥2 subproyectos
   detectados, `init` crea el archivo si falta (bloque de contexto + bloque
   de routing con la tabla `Path/Stack/Manifest/Entry context/Commands/

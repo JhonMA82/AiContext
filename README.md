@@ -15,7 +15,8 @@ cargo run -- status [--json]
 cargo run -- check [--json]
 ```
 
-Contratos machine-readable: `schemas/` (`scan-v2`, `check-v1`, `error-v1`).
+Contratos machine-readable: `schemas/` (`scan-v2`, `search-v1`,
+`status-v1`, `check-v1`, `error-v1`).
 `scan --json` emite `aicontext/scan/v2` (supera `scan-v1`, que queda como
 contrato archivado) e incluye `subprojects`/`subprojects_source`.
 Fixtures y tests: `fixtures/`, `tests/` (`cargo test`).
@@ -33,6 +34,33 @@ refresca solo bloques existentes (nunca crea el archivo ni inserta
 bloques faltantes) y con <2 subproyectos no se renderiza routing. Fuera
 de los marcadores no se edita nada: los cambios manuales se preservan y
 el puntero legacy sin marcadores se reporta sin reescribirse.
+
+### Búsqueda con scope
+
+```bash
+aicontext search "<query>" --in apps/web [--json]
+aicontext search "<query>" --subproject apps/web [--json]
+```
+
+`--in <path>` restringe tgrep/rg/git grep y ast-grep a un path
+repo-relativo existente (`.` o ausente = repo completo), filtra los hits
+de knowledge por prefijo y, con `--impact`, hace correr CodeGraph desde
+el directorio del scope: si el grafo no puede servir ese directorio
+degrada a resultados de texto con el mismo scope. `--subproject <path>`
+es `--in` con validación: el path debe ser uno de los subproyectos
+detectados (si no, error con la lista de candidatos) y la salida es
+idéntica a `--in` más el campo `subproject`. La salida JSON
+(`aicontext/search/v1`) suma `scope` y `subproject` opcionales.
+
+### Estado de adopción
+
+`status` suma una sección `Subprojects: detected: N | adopted: A |
+pending: P` (visible cuando hay subproyectos detectados o existe
+`.engineering/subprojects.yml`) y el objeto `subprojects`
+(`total`/`adopted`/`pending`) en `status --json` (`aicontext/status/v1`).
+Solo cuentan las entradas del manifiesto cuyo path coincide con un
+subproyecto detectado; sin manifiesto o con un manifiesto ilegible los
+conteos son 0/0, sin error.
 
 ## Gate de consistencia (`check`)
 

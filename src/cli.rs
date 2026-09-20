@@ -62,6 +62,12 @@ pub enum Command {
         /// Callers/callees/impact (CodeGraph when enabled, else degraded)
         #[arg(long, default_value_t = false)]
         impact: bool,
+        /// Restrict the search to a repo-relative path (`.` = whole repo)
+        #[arg(long = "in", value_name = "PATH", conflicts_with = "subproject")]
+        scope: Option<String>,
+        /// Restrict the search to a detected subproject path
+        #[arg(long = "subproject", value_name = "PATH", conflicts_with = "scope")]
+        subproject: Option<String>,
         #[arg(long, default_value_t = false)]
         json: bool,
     },

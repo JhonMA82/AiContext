@@ -42,14 +42,14 @@ pub(crate) struct SubprojectsFile {
     pub(crate) subprojects: BTreeMap<String, SubprojectEntry>,
 }
 
-/// Per-subproject entry. `purpose` feeds the routing table; `status` is
-/// declared here for WU3 (adoption lifecycle) and is not rendered yet.
+/// Per-subproject entry. `purpose` feeds the routing table; `status` feeds
+/// the `status` counts (`adopted`/`pending`). WU3 owns seeding, purpose
+/// drift and the closed enum; here unknown values are ignored.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct SubprojectEntry {
     #[serde(default)]
     pub(crate) purpose: String,
     #[serde(default)]
-    #[allow(dead_code)] // consumed by WU3 (status lifecycle), kept for shape
     pub(crate) status: String,
 }
 
@@ -777,7 +777,34 @@ pub fn cmd_status(json: bool) -> Result<i32> {
         }
         Err(_) => ("uninitialized", "unknown"),
     };
+    // Subproject adoption counts: only entries whose key matches a detected
+    // subproject path count; an absent or unparseable manifest is 0/0, never
+    // an error (the deterministic pre-WU3 state).
+    let subprojects_file = load_subprojects_file(&root);
+    let has_subprojects_file = root.join(SUBPROJECTS_FILE).is_file();
+    let detected: Vec<&str> = report.subprojects.iter().map(|s| s.path.as_str()).collect();
+    let mut adopted = 0usize;
+    let mut pending = 0usize;
+    if let Some(file) = &subprojects_file {
+        for (path, entry) in &file.subprojects {
+            if !detected.contains(&path.as_str()) {
+                continue;
+            }
+            match entry.status.as_str() {
+                "adopted" => adopted += 1,
+                "pending" => pending += 1,
+                _ => {}
+            }
+        }
+    }
+    let total = detected.len();
     if json {
+        #[derive(Serialize)]
+        struct SubprojectsOut {
+            total: usize,
+            adopted: usize,
+            pending: usize,
+        }
         #[derive(Serialize)]
         struct StatusOut<'a> {
             schema: &'a str,
@@ -786,6 +813,7 @@ pub fn cmd_status(json: bool) -> Result<i32> {
             head: Option<&'a str>,
             complexity: &'a str,
             last_check: &'a str,
+            subprojects: SubprojectsOut,
         }
         let root_str = root.to_string_lossy().into_owned();
         let out = StatusOut {
@@ -795,6 +823,11 @@ pub fn cmd_status(json: bool) -> Result<i32> {
             head: report.git.short_head.as_deref(),
             complexity: &report.complexity.profile,
             last_check,
+            subprojects: SubprojectsOut {
+                total,
+                adopted,
+                pending,
+            },
         };
         println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(0);
@@ -837,6 +870,11 @@ pub fn cmd_status(json: bool) -> Result<i32> {
         println!("Hint: run `aicontext init`.");
     } else if state_label == "stale" {
         println!("Hint: run `aicontext sync`.");
+    }
+    // The section appears when there is something to report: detected
+    // subprojects or an existing manifest (even if it is still unparseable).
+    if total > 0 || has_subprojects_file {
+        println!("Subprojects: detected: {total} | adopted: {adopted} | pending: {pending}");
     }
     let _ = AST_GREP_RULES;
     Ok(0)
