@@ -198,7 +198,7 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
 - [x] WU1 detección + `scan/v2` — commit `b5f7347` (`feat: detect monorepo subprojects with scan/v2 contract`)
 - [x] WU2 router en `AGENTS.md` — commit `f322801` (`feat: render routing blocks in AGENTS.md and subproject table in PROJECT_STATE`)
 - [x] WU3 `subprojects.yml` — commit pendiente (`feat: seed subprojects manifest and validate its shape`)
-- [ ] WU4 gates de `check`
+- [x] WU4 gates de `check` — commit pendiente (`feat: gate subproject routing lifecycle in check`)
 - [ ] WU5 `init --recursive`
 - [x] WU6 `search` con scope — commit `ca8369a` (`feat: add scoped search and subproject adoption counts`)
 - [ ] WU7 skill con scope
@@ -239,8 +239,14 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
   en un monorepo reporta stale por diseño (crear `AGENTS.md` añade un doc escaneado);
   los tests hacen `init` + `sync` antes de afirmar.
 
+- WU4 (gates de `check`): `cargo test` ⇒ 127 passed (18 suites) — los 9 tests de
+  `tests/subprojects_gates.rs` (presencia del bloque, conciliación en ambas direcciones,
+  adopción hueca vs grounded, pending advisory, repo simple sin gates, manifiesto ausente);
+  `cargo fmt --check` limpio. Pre-verificado: ningún test existente de `check` usa
+  monorepos con init (todos usan fixtures simples), sin regresiones.
+
 ## Próximo paso
 
-WU3 cerrado: siguiente **WU4** (gates de `check`), luego WU5 para completar el PR2.
-Después PR3 = WU7. Los 3 PRs apuntan a `feat/monorepo-subproject-routing`,
+WU4 cerrado: siguiente **WU5** (`init --recursive` + `resolve_project_root()`) para completar
+el PR2. Después PR3 = WU7. Los 3 PRs apuntan a `feat/monorepo-subproject-routing`,
 se mergean en orden y al final un único PR a `master`.
