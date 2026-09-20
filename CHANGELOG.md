@@ -6,6 +6,14 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ### Agregado
 
+- Skill con scope y skew en `doctor` (WU7): `aicontext-adopt` documenta la
+  corrida única sobre todos los detectados (orden fijo por path, slices
+  reanudables, presupuesto por scope con salida legal a `pending`, un commit
+  por subproyecto, summary final). `doctor` compara el `SKILL.md` instalado
+  con el embebido (ausente/al día/stale/unmanaged, siempre advisory).
+  `tests/adopt_skill.rs` (6 tests) cubre el contenido instalado y los cuatro
+  estados del diagnóstico sin que el skew falle nunca.
+
 - `init --recursive` y resolución anidada: por cada subproyecto detectado
   crea su `.engineering/` (manifiesto con `[subproject]` y puntero `parent`
   al root, estado generado, patrones, stub de consistencia; fuente de

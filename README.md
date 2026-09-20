@@ -67,6 +67,16 @@ manifiesto más cercano hacia arriba (`resolve_project_root()`): dentro de
 un subproyecto con contexto anidado se opera sobre él, si no sobre el git
 toplevel como antes.
 
+### Adopción con scope (skill + `doctor`)
+
+El skill `aicontext-adopt` adopta un monorepo en una corrida sobre todos
+los detectados, en orden fijo por path y por slices reanudables: un commit
+por subproyecto, presupuesto por scope con salida legal a `pending` y
+summary final (adoptados con su propósito, pendientes con lo que les
+falta). `doctor` suma el diagnóstico `skill`: compara el `SKILL.md`
+instalado con el embebido en el binario (ausente, al día, stale con ambas
+versiones, unmanaged) y siempre es advisory — el skew nunca falla.
+
 ### Búsqueda con scope
 
 ```bash

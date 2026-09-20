@@ -60,3 +60,31 @@ Level 6  broad exploration, only if evidence is still missing
 - Never install tools as a side effect; point at `aicontext tools plan` instead.
 - Never rewrite the `generated` block of `PROJECT_STATE.md` by hand; `aicontext sync` owns it.
 - Never auto-invoke this skill. It runs when the user asks (`/aicontext-adopt`) for a repo worth adopting once.
+
+## Monorepo scope (one run adopts every detected subproject)
+
+When `scan --json` lists `subprojects`, adopt them all in a single run, in fixed
+path order (byte-stable, resumable). Each subproject is one slice: finish it fully
+before starting the next, so an interrupted run resumes at the first unfinished path.
+
+Per subproject slice (in path order):
+
+1. Read only its entry context (the root routing block names it) plus its nested
+   `.engineering/` state when `init --recursive` already seeded it. Never explore
+   sibling subprojects for this slice.
+2. Work the normal flow scoped to the slice: curated nested `PROJECT_STATE.md`,
+   the subproject's own `PATTERNS.md` (transversal patterns stay in the root file),
+   scoped search via `aicontext search --subproject <path>`.
+3. Write the slice result to the root `.engineering/subprojects.yml`: a one-line
+   `purpose` and `status: adopted` when the slice is done.
+4. Commit exactly one commit per subproject before moving on.
+
+Budget per scope, with legal exit to `pending`: if the exploration budget (above)
+runs out for a slice, stop expanding, leave `status: pending` (or keep it), record
+what is still `TBD`, and continue with the next subproject. `pending` is a legal
+outcome, never a failure — `check` stays advisory about it and the next run resumes
+there.
+
+Summary final: end with one list of adopted subprojects (with their one-line
+purposes), one list of pending ones (with what each still needs), and the root
+`aicontext check` result.

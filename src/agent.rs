@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::path::PathBuf;
 
 const SKILL_NAME: &str = "aicontext-adopt";
-const SKILL_BODY: &str = include_str!("../skills/aicontext-adopt/SKILL.md");
+pub(crate) const SKILL_BODY: &str = include_str!("../skills/aicontext-adopt/SKILL.md");
 const MANAGED_MANIFEST: &str = ".aicontext-managed.json";
 
 /// Legacy, unmarked AGENTS.md pointer appended by `agent install`. The
@@ -29,6 +29,29 @@ fn home_dir() -> Result<PathBuf> {
 
 fn skills_dir() -> Result<PathBuf> {
     Ok(home_dir()?.join(".pi").join("agent").join("skills"))
+}
+
+/// Installed skill state for the doctor skew gate: the on-disk `SKILL.md`
+/// body plus the managing binary version from the ownership manifest
+/// (`None` when the install is unmanaged). A missing file or directory
+/// reads as `None` (not installed), never an error.
+pub(crate) struct InstalledSkill {
+    pub body: String,
+    pub version: Option<String>,
+}
+
+pub(crate) fn installed_skill() -> Option<InstalledSkill> {
+    let body = std::fs::read_to_string(skill_dir().ok()?.join("SKILL.md")).ok()?;
+    let version = skill_dir()
+        .ok()
+        .and_then(|dir| std::fs::read_to_string(dir.join(MANAGED_MANIFEST)).ok())
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|v| {
+            v.get("version")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string())
+        });
+    Some(InstalledSkill { body, version })
 }
 
 fn skill_dir() -> Result<PathBuf> {
