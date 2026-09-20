@@ -201,7 +201,7 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
 - [x] WU4 gates de `check` — commit pendiente (`feat: gate subproject routing lifecycle in check`)
 - [x] WU5 `init --recursive` — commit pendiente (`feat: add recursive init with nested subproject contexts`)
 - [x] WU6 `search` con scope — commit `ca8369a` (`feat: add scoped search and subproject adoption counts`)
-- [ ] WU7 skill con scope
+- [x] WU7 skill con scope — commit pendiente (`feat: scope adoption skill and detect skill skew in doctor`)
 
 ## Evidencia de verificación
 
@@ -252,8 +252,13 @@ final va un único PR de la rama a `master`. Slices: PR1 = WU1+WU2+WU6, PR2 = WU
   `cargo fmt --check` limpio. PR2 (WU3+WU4+WU5) completo. Limitación conocida registrada:
   el scan anidado aún cuenta archivos repo-wide (cada contexto converge igual).
 
-## Próximo paso
+- WU7 (skill con scope + `doctor` de skew): `cargo test` ⇒ 142 passed (20 suites) —
+  los 6 tests de `tests/adopt_skill.rs` (contenido instalado con scope monorepo, skew
+  ausente/al día/stale/unmanaged, el skew nunca falla); `cargo fmt --check` limpio.
 
-PR2 cerrado. Solo queda **WU7** (skill `aicontext-adopt` con scope + `doctor` de skew,
-PR3). Después, los 3 PRs apuntan a `feat/monorepo-subproject-routing`, se mergean en
-orden y al final un único PR a `master`.
+## Estado final
+
+Feature completa: WU1–WU7 cerrados (PR1 = WU1+WU2+WU6, PR2 = WU3+WU4+WU5, PR3 = WU7),
+142 tests en 20 suites, `cargo fmt` limpio, `aicontext check` en verde. La cadena
+aprobada (`feature-branch-chain`) queda lista: los 3 PRs apuntan a
+`feat/monorepo-subproject-routing`, se mergean en orden y al final un único PR a `master`.
