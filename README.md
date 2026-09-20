@@ -42,10 +42,14 @@ schema en `schemas/subprojects-v1.json`) con cada path detectado como
 `status: pending` y `purpose` vacío; el skill de adopción llena el
 `purpose` y mueve entradas a `adopted`. El archivo existente **nunca** se
 reescribe (ni `init` ni `sync` lo tocan) y `sync` proyecta el `purpose` en
-la tabla de `PROJECT_STATE.md`. `check` valida la forma estricta: claves
-desconocidas y estados fuera del enum cerrado (`pending`/`adopted`) fallan;
-sin manifiesto no hay nada que validar y un schema futuro se omite sin
-bloquear.
+la tabla de `PROJECT_STATE.md`. `check` valida la forma estricta (claves
+desconocidas y estados fuera del enum cerrado fallan) y el ciclo de vida:
+con ≥2 subproyectos el bloque de routing debe estar presente, las entradas
+deben conciliar con la detección en ambas direcciones (faltantes y rancias
+fallan) y un `adopted` sin contexto anidado real
+(`<path>/.engineering/aicontext.toml`) falla cerrado; `pending` es
+advisory. Sin manifiesto no hay nada que validar y un schema futuro se
+omite sin bloquear.
 
 ### Búsqueda con scope
 

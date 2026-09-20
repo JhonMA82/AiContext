@@ -155,12 +155,22 @@ pub fn run_check(root: &Path, json: bool) -> Result<i32> {
             // 6b. subprojects manifest: strict v1 shape (unknown keys fail)
             // and closed status enum. Absent passes; detection
             // reconciliation (missing/stale entries, adopted lifecycle) is
-            // WU4's gate, not this shape check.
+            // the `subprojects routing` gate below, not this shape check.
             let (sub_ok, sub_detail) = crate::state::check_subprojects_file(root);
             findings.push(Finding {
                 name: "subprojects".to_string(),
                 passed: sub_ok,
                 detail: sub_detail,
+            });
+            // 6c. subprojects routing lifecycle (WU4): block presence with
+            // ≥2 detected, manifest/detection reconciliation both ways,
+            // adopted without a real nested context fails closed, pending
+            // stays advisory.
+            let (route_ok, route_detail) = check_subprojects_routing(root);
+            findings.push(Finding {
+                name: "subprojects routing".to_string(),
+                passed: route_ok,
+                detail: route_detail,
             });
         }
         Err(e) => {
@@ -350,6 +360,117 @@ fn required_adapter_verdict(a: &crate::adapters::AdapterOutcome, manifest: &str)
             a.state, a.detail, a.tool
         ),
     )
+}
+
+/// Lifecycle gates for the monorepo router (WU4): with ≥2 detected
+/// subprojects the root `AGENTS.md` must carry the marked routing block;
+/// manifest entries reconcile with detection in both directions (missing
+/// entries fail, stale entries fail reusing [`stale_mentions`] for the docs
+/// still naming them); `adopted` without a real nested context
+/// (`<path>/.engineering/aicontext.toml`) fails closed; `pending` is
+/// advisory and never fails. Shape problems belong to the `subprojects`
+/// finding — when the manifest exists but cannot be read as v1, this gate
+/// skips instead of cascading.
+fn check_subprojects_routing(root: &Path) -> (bool, String) {
+    let (detected, _) = crate::scan::detect_subprojects(root);
+    let detected_paths: BTreeSet<&str> = detected.iter().map(|s| s.path.as_str()).collect();
+    let mut problems: Vec<String> = Vec::new();
+    let mut notes: Vec<String> = Vec::new();
+
+    // 1. Routing block presence (only a choice routes: <2 needs no block,
+    // and an existing one is left intact by design).
+    if detected.len() >= crate::state::ROUTING_MIN_SUBPROJECTS {
+        let has_block = std::fs::read_to_string(root.join("AGENTS.md"))
+            .map(|t| crate::state::has_routing_block(&t))
+            .unwrap_or(false);
+        if has_block {
+            notes.push("routing block present".to_string());
+        } else {
+            problems.push("routing block missing in AGENTS.md — run `aicontext init`".to_string());
+        }
+    } else {
+        notes.push("fewer than 2 subprojects — no routing block required".to_string());
+    }
+
+    // 2. Manifest/detection reconciliation.
+    let manifest_rel = crate::state::SUBPROJECTS_FILE;
+    match crate::state::load_subprojects_file(root) {
+        Some(file) => {
+            let declared: BTreeSet<&str> = file.subprojects.keys().map(|s| s.as_str()).collect();
+            let missing: Vec<&str> = detected_paths.difference(&declared).copied().collect();
+            if !missing.is_empty() {
+                problems.push(format!(
+                    "not declared in {manifest_rel}: {} — add them with `status: pending`",
+                    missing.join(", ")
+                ));
+            }
+            let stale: Vec<&str> = declared.difference(&detected_paths).copied().collect();
+            if !stale.is_empty() {
+                let mut msg = format!(
+                    "no longer detected, still declared in {manifest_rel}: {} — remove them",
+                    stale.join(", ")
+                );
+                let owned: Vec<String> = stale.iter().map(|s| s.to_string()).collect();
+                let mentions = stale_mentions(root, &owned);
+                if !mentions.is_empty() {
+                    msg.push_str(&format!("; still mentioned in: {}", mentions.join(", ")));
+                }
+                problems.push(msg);
+            }
+            // 3. Adopted entries must have a real nested context; pending
+            // is advisory (collected for the passing detail only).
+            let mut adopted = 0usize;
+            let mut pending: Vec<&str> = Vec::new();
+            let mut hollow: Vec<&str> = Vec::new();
+            for s in &detected {
+                match file.subprojects.get(&s.path).map(|e| e.status.as_str()) {
+                    Some("adopted") => {
+                        adopted += 1;
+                        if !s.initialized {
+                            hollow.push(s.path.as_str());
+                        }
+                    }
+                    Some("pending") => pending.push(s.path.as_str()),
+                    // Unknown statuses belong to the shape gate.
+                    _ => {}
+                }
+            }
+            if !hollow.is_empty() {
+                problems.push(format!(
+                    "adopted without a real nested context (.engineering/aicontext.toml missing under each path): {} — run `aicontext init` inside each path or set status back to pending",
+                    hollow.join(", ")
+                ));
+            }
+            notes.push(format!(
+                "{} declared, {} missing, {} stale; adopted: {adopted}",
+                declared.len(),
+                missing.len(),
+                stale.len(),
+            ));
+            if pending.is_empty() {
+                notes.push("no pending entries".to_string());
+            } else {
+                notes.push(format!("pending (advisory): {}", pending.join(", ")));
+            }
+        }
+        None => {
+            if root.join(manifest_rel).exists() {
+                notes.push("skipped: see the subprojects shape finding".to_string());
+            } else if detected.len() >= crate::state::ROUTING_MIN_SUBPROJECTS {
+                problems.push(format!(
+                    "no {manifest_rel} — run `aicontext init` to seed it"
+                ));
+            } else {
+                notes.push("no manifest — nothing to reconcile".to_string());
+            }
+        }
+    }
+
+    if problems.is_empty() {
+        (true, notes.join("; "))
+    } else {
+        (false, problems.join("; "))
+    }
 }
 
 fn current_generated(text: &str) -> String {

@@ -14,6 +14,14 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
   suma el gate `subprojects`: claves desconocidas y estados fuera del enum
   cerrado (`pending`/`adopted`) fallan con los ofensores exactos; sin
   manifiesto el gate pasa y un schema futuro se omite sin bloquear.
+  `check` suma el gate `subprojects routing`: con ≥2 subproyectos el bloque
+  de routing debe estar presente, las entradas concilian con la detección
+  en ambas direcciones (faltantes y rancias fallan, las rancias listan los
+  docs que aún las mencionan) y un `adopted` sin `<path>/.engineering`
+  real falla cerrado; `pending` es advisory. `tests/subprojects_gates.rs`
+  (9 tests) cubre presencia del bloque, ambas direcciones de la
+  conciliación, adopción hueca vs grounded, pending advisory, repo simple
+  sin gates y manifiesto ausente.
   `tests/subprojects_manifest.rs` (8 tests) cubre el seed byte-exacto, la
   no-reescritura en `init`/`sync`, la proyección del `purpose`, los rechazos
   (estado, claves, YAML inválido) y la validación contra el schema.

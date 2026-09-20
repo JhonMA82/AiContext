@@ -21,13 +21,13 @@ pub const CONTEXT_END: &str = "<!-- aicontext:context:end -->";
 
 /// The router only exists when there is a choice to route: one project is
 /// just a normal repository and gets no `AGENTS.md` block.
-const ROUTING_MIN_SUBPROJECTS: usize = 2;
+pub(crate) const ROUTING_MIN_SUBPROJECTS: usize = 2;
 const AGENTS_FILE: &str = "AGENTS.md";
 /// Contract id and location of the subproject manifest. `init` seeds it
 /// (never rewrites); `check` enforces the strict v1 shape and the closed
 /// status enum. Unknown schemas stay forward-compatible (read as absent).
 const SUBPROJECTS_SCHEMA: &str = "aicontext/subprojects/v1";
-const SUBPROJECTS_FILE: &str = ".engineering/subprojects.yml";
+pub(crate) const SUBPROJECTS_FILE: &str = ".engineering/subprojects.yml";
 /// Closed adoption lifecycle: the skill moves entries from `pending` to
 /// `adopted`. Anything else fails `check` (WU4 adds the lifecycle gates).
 const SUBPROJECT_STATUSES: [&str; 2] = ["pending", "adopted"];
@@ -65,7 +65,7 @@ pub(crate) struct SubprojectEntry {
 /// unreadable, unknown-schema or (as of the strict v1 shape) unknown-key
 /// file degrades to `None` instead of failing the render; `check` is the
 /// gate that reports those problems.
-fn load_subprojects_file(root: &Path) -> Option<SubprojectsFile> {
+pub(crate) fn load_subprojects_file(root: &Path) -> Option<SubprojectsFile> {
     let text = std::fs::read_to_string(root.join(SUBPROJECTS_FILE)).ok()?;
     let file: SubprojectsFile = serde_yaml::from_str(&text).ok()?;
     if !file.schema.is_empty() && file.schema != SUBPROJECTS_SCHEMA {
@@ -287,6 +287,12 @@ fn extract_block<'a>(text: &'a str, start: &str, end: &str) -> Option<&'a str> {
     let s = text.find(start)?;
     let rel = text.get(s..)?.find(end)?;
     Some(&text[s..s + rel + end.len()])
+}
+
+/// Presence of the marked routing block (the WU4 presence gate reads this;
+// the legacy unmarked pointer does not count).
+pub(crate) fn has_routing_block(text: &str) -> bool {
+    extract_block(text, ROUTING_START, ROUTING_END).is_some()
 }
 
 /// Where [`upsert_block`] placed (or found) a marked block.
