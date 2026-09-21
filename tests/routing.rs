@@ -410,3 +410,33 @@ fn legacy_pointer_is_reported_neither_duplicated_nor_rewritten() {
     assert_eq!(read(&dir, "AGENTS.md"), after);
     assert!(out2.contains("legacy pointer left untouched"), "{out2}");
 }
+
+#[test]
+fn routing_row_addition_converges_in_one_sync() {
+    let dir = monorepo(&[]);
+    let _ = init(&dir);
+    let (cs, sout) = run(&dir, ["sync"]);
+    assert_eq!(cs, 0, "sync must converge after init: {sout}");
+    // Topology change: a third subproject plus its adoption entry.
+    write(&dir, "apps/third/package.json", r#"{"name":"third"}"#);
+    git(&dir, ["add", "-A"]);
+    git(&dir, ["commit", "-qm", "third subproject"]);
+    let manifest = read(&dir, ".engineering/subprojects.yml");
+    assert!(manifest.contains("apps/api"));
+    write(
+        &dir,
+        ".engineering/subprojects.yml",
+        &format!("{manifest}  apps/third:\n    purpose: \"\"\n    status: pending\n"),
+    );
+    // One sync must converge: the routing refresh (new row) is re-observed
+    // before the generated block is written, otherwise Markdown LOC drift
+    // leaves the tree stale until a second pass.
+    let (cs2, out2) = run(&dir, ["sync"]);
+    assert_eq!(cs2, 0, "{out2}");
+    let (cc, cout) = run(&dir, ["sync", "--check"]);
+    assert_eq!(cc, 0, "one sync must converge after a row addition: {cout}");
+    let state = read(&dir, ".engineering/PROJECT_STATE.md");
+    assert!(state.contains("apps/third"), "new row projected:\n{state}");
+    let agents = read(&dir, "AGENTS.md");
+    assert!(agents.contains("apps/third"), "routing refreshed:\n{agents}");
+}

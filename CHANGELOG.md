@@ -2,6 +2,16 @@
 
 Formato basado en Keep a Changelog. Versiones: SemVer.
 
+## [Unreleased]
+
+### Corregido
+
+- `sync` converge en una sola pasada tras cambios de topología: refresca
+  el routing de `AGENTS.md` y re-escanea antes de escribir el bloque
+  generado (el LOC de Markdown cambiaba bajo sus pies y dejaba el árbol
+  stale hasta un segundo `sync`). `tests/routing.rs` lo cubre con
+  `routing_row_addition_converges_in_one_sync`.
+
 ## [0.3.0] - 2026-09-21
 
 ### Agregado

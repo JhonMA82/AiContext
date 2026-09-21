@@ -630,8 +630,13 @@ enum RoutingMode {
 
 /// Result of the idempotent `AGENTS.md` routing update (human-readable,
 /// printed by `init`/`sync`; the machine contracts stay unchanged).
+/// `changed` reports whether any file bytes were written, so callers that
+/// derive further facts from the tree (e.g. `sync`'s generated block, which
+/// embeds Markdown LOC) can re-observe after the write instead of acting on
+/// a stale scan.
 struct RoutingOutcome {
     note: String,
+    changed: bool,
 }
 
 /// Keeps the marked blocks of the root `AGENTS.md` current. The file is
@@ -660,6 +665,7 @@ fn update_agents_routing(
         };
         return Ok(RoutingOutcome {
             note: note.to_string(),
+            changed: false,
         });
     }
 
@@ -667,6 +673,7 @@ fn update_agents_routing(
         if mode != RoutingMode::Init {
             return Ok(RoutingOutcome {
                 note: "AGENTS.md absent: no routing block to refresh".to_string(),
+                changed: false,
             });
         }
         // Fresh file: routing block first, context pointer last, nothing
@@ -681,6 +688,7 @@ fn update_agents_routing(
         std::fs::write(&path, created)?;
         return Ok(RoutingOutcome {
             note: "AGENTS.md created with context and routing blocks".to_string(),
+            changed: true,
         });
     };
 
@@ -760,6 +768,7 @@ fn update_agents_routing(
     }
     Ok(RoutingOutcome {
         note: format!("AGENTS.md: {}", notes.join("; ")),
+        changed: changed && write,
     })
 }
 
@@ -981,9 +990,7 @@ pub fn cmd_sync(check_only: bool, json: bool) -> Result<i32> {
     let existing = std::fs::read_to_string(&state_path)
         .with_context(|| format!("missing {}", cfg.state.project_state))?;
     let report = scan::collect_scan(&root)?;
-    let fresh_generated = generated_block(&report);
     let current_generated = extract_generated(&existing).unwrap_or_default();
-    let drift = freshness_key(&current_generated) != freshness_key(&fresh_generated);
 
     // `sync` refreshes existing AGENTS.md blocks and reports a missing one;
     // it never creates the file. `--check` writes nothing at all.
@@ -998,6 +1005,22 @@ pub fn cmd_sync(check_only: bool, json: bool) -> Result<i32> {
             RoutingMode::Sync
         },
     )?;
+
+    // A routing refresh rewrites AGENTS.md, whose Markdown LOC and docs feed
+    // the generated block: re-observe after the write, otherwise the block
+    // written below is stale on arrival (it misses the new routing rows)
+    // and convergence takes two passes. The manifest is never written by
+    // the routing step, so `subprojects_file` stays valid.
+    let (fresh_generated, drift) = if routing.changed {
+        let report = scan::collect_scan(&root)?;
+        let fresh = generated_block(&report);
+        let drift = freshness_key(&current_generated) != freshness_key(&fresh);
+        (fresh, drift)
+    } else {
+        let fresh = generated_block(&report);
+        let drift = freshness_key(&current_generated) != freshness_key(&fresh);
+        (fresh, drift)
+    };
 
     if check_only {
         if json {
