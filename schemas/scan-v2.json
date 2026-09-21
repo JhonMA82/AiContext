@@ -112,7 +112,7 @@
         "properties": {
           "path": { "type": "string" },
           "name": { "type": "string" },
-          "kind": { "enum": ["manifest", "agents-marker"] },
+          "kind": { "enum": ["manifest", "agents-marker", "engineering-surface"] },
           "manifest": { "type": ["string", "null"] },
           "manager": {
             "type": ["string", "null"],
@@ -140,10 +140,24 @@
       "type": "object",
       "required": ["mode", "declared", "unresolved", "containers"],
       "properties": {
-        "mode": { "enum": ["declared", "containers", "none"] },
+        "mode": { "enum": ["declared", "containers", "none", "engineering"] },
         "declared": { "type": "array", "items": { "type": "string" } },
         "unresolved": { "type": "array", "items": { "type": "string" } },
         "containers": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "engineering": {
+      "type": "object",
+      "required": ["origin", "supported", "surfaces"],
+      "properties": {
+        "origin": { "const": "engineering-platform" },
+        "supported": { "type": "boolean" },
+        "project": { "type": "string" },
+        "recipe": { "type": "string" },
+        "surfaces": { "type": "integer", "minimum": 0 },
+        "database_profile": { "type": "string" },
+        "plan_fingerprint": { "type": "string" },
+        "reason": { "type": "string" }
       }
     }
   }

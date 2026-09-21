@@ -312,6 +312,26 @@ pub fn run_doctor(root: &Path) -> Vec<Diagnostic> {
         }
     }
 
+    // Engineering origin (advisory only): `eng doctor` owns materialization
+    // invariants; `aicontext check` owns the drift gate. Doctor only reports
+    // which mode this repo is in. Standalone repos emit no diagnostic.
+    match crate::engineering::detect(root) {
+        crate::engineering::EngineeringDetection::Absent => {}
+        crate::engineering::EngineeringDetection::Supported(info) => out.push(ok(
+            "engineering",
+            format!(
+                "engineering-managed (recipe {}, {} surface(s) via .engineering/project-map.json)",
+                info.recipe,
+                info.surfaces.len()
+            ),
+        )),
+        crate::engineering::EngineeringDetection::Unsupported { reason, .. } => out.push(warn(
+            "engineering",
+            format!("engineering contracts present but unsupported: {reason}"),
+            Some("upgrade aicontext or regenerate with a compatible Engineering Platform; see `aicontext check`"),
+        )),
+    }
+
     out
 }
 

@@ -18,7 +18,10 @@ cargo run -- check [--json]
 Contratos machine-readable: `schemas/` (`scan-v2`, `search-v1`,
 `status-v1`, `check-v1`, `error-v1`).
 `scan --json` emite `aicontext/scan/v2` (supera `scan-v1`, que queda como
-contrato archivado) e incluye `subprojects`/`subprojects_source`.
+contrato archivado) e incluye `subprojects`/`subprojects_source` (modo
+`engineering` y `kind: engineering-surface` cuando hay contratos
+Engineering, más objeto opcional `engineering`) y `status --json`
+(`aicontext/status/v1`) suma `origin`/`engineering` opcionales.
 Fixtures y tests: `fixtures/`, `tests/` (`cargo test`).
 
 ## Router de subproyectos (monorepos)
@@ -103,6 +106,67 @@ pending: P` (visible cuando hay subproyectos detectados o existe
 Solo cuentan las entradas del manifiesto cuyo path coincide con un
 subproyecto detectado; sin manifiesto o con un manifiesto ilegible los
 conteos son 0/0, sin error.
+
+## Compatibilidad con Engineering Platform
+
+AiContext detecta de forma determinista (sin LLM) los proyectos
+materializados por Engineering Platform y los trata como
+**Engineering-managed** sin perder capacidad standalone.
+
+- **Detección:** requiere `.engineering/project.json` **y**
+  `.engineering/project-map.json` presentes y bien formados
+  (`schema_version` conocido: manifiesto 1–2, mapa 1). Solo existir
+  `.engineering/` no basta (AiContext también lo usa). Contratos parciales,
+  inválidos o futuros no se interpretan en silencio: `check` falla cerrado
+  con el motivo exacto.
+- **Precedencia:** el mapa Engineering es la entrada de routing preferida
+  (`scan --json`: `subprojects_source.mode: engineering`,
+  `kind: engineering-surface`, objeto `engineering` con receta/proyecto).
+  Sin contratos Engineering, la detección standalone funciona exactamente
+  igual que antes (workspaces/manifiestos/containers).
+- **`PROJECT_STATE.md`:** en proyectos Engineering-managed el bloque
+  generado suma referencias compactas (`Origin: engineering-platform`,
+  `Architecture source:`, `Manifest source:`, receta, superficies, database
+  profile, fingerprint) sin copiar los JSON. En standalone no emite líneas
+  nuevas.
+- **`check`:** el finding `engineering` valida filesystem vs declaración
+  (destinos existentes, mapa vs manifiesto, fingerprint de provenance) y
+  reporta drift sin reimplementar `eng doctor`. En standalone pasa como
+  advisory.
+- **`status`/`doctor`:** `status --json` suma `origin` y `engineering`
+  (opcionales); `doctor` solo informa el modo (advisory).
+- **Skill:** `aicontext-adopt` consume primero los contratos Engineering y
+  solo persiste conocimiento semántico nuevo (ver `SKILL.md`).
+- **Sin dependencias runtime** entre ambos ni lógica por receta: AiContext
+  nunca decide por nombre de receta (`GP-01`…) y funciona con superficies
+  desconocidas mientras respeten el contrato.
+
+### Ownership de `.engineering/`
+
+| Artifact | Owner |
+|---|---|
+| `project.json` | Engineering |
+| `project-map.json` | Engineering |
+| `provenance.json` | Engineering |
+| `project-intent.json` | Engineering |
+| `architecture-decision.json` | Engineering |
+| `materialization-plan.json` | Engineering |
+| `implementation-brief.md` | Engineering |
+| `handoff.json` | Engineering |
+| `runs/*.json` | Engineering |
+| `ARCHITECTURE.md`, `GENTLE.md` | Engineering |
+| `AGENTS.md` (fuera de bloques `<!-- aicontext:* -->`) | Engineering/usuario |
+| `aicontext.toml` | AiContext |
+| `PROJECT_STATE.md` | AiContext |
+| `PATTERNS.md` | AiContext |
+| `consistency.yml` | AiContext |
+| `subprojects.yml` | AiContext |
+| `rules/**` | AiContext |
+| Bloques `<!-- aicontext:routing:* -->`, `<!-- aicontext:context:* -->` en `AGENTS.md` | AiContext |
+
+Ningún `init`/`sync`/`check`/`doctor`/cleanup/evolution puede eliminar o
+sobrescribir artefactos del otro proyecto. `AGENTS.md` solo se edita dentro
+de los bloques marcados propios.
 
 ## Gate de consistencia (`check`)
 

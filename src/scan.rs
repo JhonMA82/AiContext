@@ -13,6 +13,21 @@ use crate::tools::{self, ToolInfo};
 pub const SCAN_SCHEMA: &str = "aicontext/scan/v2";
 
 #[derive(Debug, Clone, Serialize)]
+pub struct EngineeringSummary {
+    pub origin: String,
+    pub supported: bool,
+    pub project: Option<String>,
+    pub recipe: Option<String>,
+    pub surfaces: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub database_profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_fingerprint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ScanReport {
     pub schema: String,
     pub git: GitInfo,
@@ -26,6 +41,8 @@ pub struct ScanReport {
     pub ci: Vec<String>,
     pub subprojects: Vec<Subproject>,
     pub subprojects_source: SubprojectsSource,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engineering: Option<EngineeringSummary>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -739,14 +756,89 @@ fn build_subproject(root: &Path, rel: &str, tracked: &[&str]) -> Option<Subproje
     })
 }
 
-/// Deterministic subproject detection. Declared workspaces win: when they
-/// resolve to at least one usable directory, container directories are never
-/// scanned. Otherwise a depth-1 scan of the container directories runs, and
-/// if that yields no qualified candidate the mode is `none`. Every ordered
-/// output is sorted so the same tree serializes byte-identically.
+/// One Engineering-declared destination as a routing input. Engineering is
+/// authority on architecture: the directory qualifies even without a
+/// workspace manifest or AGENTS.md marker. Missing directories are NOT
+/// listed here; `check` reports them as drift.
+fn build_engineering_subproject(
+    root: &Path,
+    surface: &crate::engineering::EngineeringSurface,
+    tracked: &[&str],
+) -> Option<Subproject> {
+    let rel = surface.path.as_str();
+    // Hidden segments and excluded vendor/build paths never route.
+    if rel.split('/').any(|seg| seg.starts_with('.')) {
+        return None;
+    }
+    if is_excluded(&format!("{rel}/")) {
+        return None;
+    }
+    let dir = root.join(rel);
+    let meta = std::fs::symlink_metadata(&dir).ok()?;
+    if meta.file_type().is_symlink() || !meta.is_dir() {
+        return None;
+    }
+    let manifest = SUBPROJECT_MANIFESTS
+        .iter()
+        .find(|m| dir.join(m).is_file())
+        .map(|m| m.to_string());
+    let manager = manifest
+        .as_deref()
+        .and_then(|m| detect_subproject_manager(&dir, m));
+    let agents_md = dir.join("AGENTS.md").is_file();
+    Some(Subproject {
+        path: rel.to_string(),
+        name: surface.surface.clone(),
+        kind: "engineering-surface".to_string(),
+        manifest,
+        manager,
+        commands: detect_subproject_commands(&dir),
+        agents_md,
+        initialized: dir.join(".engineering/aicontext.toml").is_file(),
+        complexity: subproject_complexity(root, rel, tracked),
+    })
+}
+
+/// Deterministic subproject detection with Engineering precedence.
+///
+/// When Engineering contracts are present and supported, their declared
+/// destinations are the preferred deterministic routing input: workspace
+/// manifests and container scans are NOT consulted (no rediscovery).
+/// Otherwise the standalone logic runs unchanged:
+///
+/// Declared workspaces win: when they resolve to at least one usable
+/// directory, container directories are never scanned. Otherwise a depth-1
+/// scan of the container directories runs, and if that yields no qualified
+/// candidate the mode is `none`. Every ordered output is sorted so the same
+/// tree serializes byte-identically.
 ///
 /// Read-only with respect to user-owned files: nothing is written.
 pub fn detect_subprojects(root: &Path) -> (Vec<Subproject>, SubprojectsSource) {
+    // Engineering-managed: authoritative map wins, no heuristic rediscovery.
+    if let crate::engineering::EngineeringDetection::Supported(info) =
+        crate::engineering::detect(root)
+    {
+        let tracked_raw = git_output(root, ["ls-files"]).unwrap_or_default();
+        let tracked: Vec<&str> = tracked_raw.lines().collect();
+        let mut subprojects: Vec<Subproject> = info
+            .surfaces
+            .iter()
+            .filter_map(|s| build_engineering_subproject(root, s, &tracked))
+            .collect();
+        subprojects.sort_by(|a, b| a.path.cmp(&b.path));
+        subprojects.dedup_by(|a, b| a.path == b.path);
+        let mut declared = info.declared_paths();
+        declared.sort();
+        return (
+            subprojects,
+            SubprojectsSource {
+                mode: "engineering".to_string(),
+                declared,
+                unresolved: Vec::new(),
+                containers: Vec::new(),
+            },
+        );
+    }
     let mut declared: Vec<String> = Vec::new();
     for entry in declared_subproject_entries(root) {
         if !declared.contains(&entry) {
@@ -906,6 +998,33 @@ pub fn collect_scan(root: &Path) -> Result<ScanReport> {
     let workspace_count: usize = packages.iter().map(|p| p.workspaces.len()).sum();
     let override_size = RepoConfig::load(root).ok().and_then(|c| c.repository.size);
     let (subprojects, subprojects_source) = detect_subprojects(root);
+    let engineering = match crate::engineering::detect(root) {
+        crate::engineering::EngineeringDetection::Absent => None,
+        crate::engineering::EngineeringDetection::Supported(info) => Some(EngineeringSummary {
+            origin: "engineering-platform".to_string(),
+            supported: true,
+            project: Some(info.project.clone()),
+            recipe: Some(info.recipe.clone()),
+            surfaces: info.surfaces.len(),
+            database_profile: info.database_profile.clone(),
+            plan_fingerprint: Some(info.plan_fingerprint.clone()),
+            reason: None,
+        }),
+        crate::engineering::EngineeringDetection::Unsupported {
+            reason,
+            manifest_version: _,
+            map_version: _,
+        } => Some(EngineeringSummary {
+            origin: "engineering-platform".to_string(),
+            supported: false,
+            project: None,
+            recipe: None,
+            surfaces: 0,
+            database_profile: None,
+            plan_fingerprint: None,
+            reason: Some(reason),
+        }),
+    };
     let mut complexity = classify(
         source_files,
         total_loc,
@@ -938,6 +1057,7 @@ pub fn collect_scan(root: &Path) -> Result<ScanReport> {
         ci: detect_ci(root),
         subprojects,
         subprojects_source,
+        engineering,
     })
 }
 

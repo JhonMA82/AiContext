@@ -27,6 +27,18 @@
         "adopted": { "type": "integer", "minimum": 0 },
         "pending": { "type": "integer", "minimum": 0 }
       }
+    },
+    "origin": { "type": "string" },
+    "engineering": {
+      "type": "object",
+      "required": ["recipe", "project", "surfaces", "plan_fingerprint"],
+      "properties": {
+        "recipe": { "type": "string" },
+        "project": { "type": "string" },
+        "surfaces": { "type": "integer", "minimum": 0 },
+        "database_profile": { "type": "string" },
+        "plan_fingerprint": { "type": "string" }
+      }
     }
   }
 }

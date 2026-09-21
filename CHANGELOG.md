@@ -4,6 +4,22 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ## [Unreleased]
 
+### Agregado
+
+- Compatibilidad Engineering Platform (sin dependencia runtime):
+  detección determinista de proyectos Engineering-managed
+  (`.engineering/project.json` + `.engineering/project-map.json` con
+  `schema_version` conocido; sin hardcodear recetas), precedencia del mapa
+  declarado en `scan` (`mode: engineering`,
+  `kind: engineering-surface`, objeto `engineering`), referencias compactas
+  en `PROJECT_STATE.md`, finding `engineering` en `check` (drift
+  filesystem vs declaración), `origin`/`engineering` en `status` y
+  diagnóstico advisory en `doctor`. Standalone sigue first-class y sin
+  cambios de comportamiento. Skill `aicontext-adopt` con sección
+  Engineering-first. Tabla de ownership de `.engineering/` en `README.md`.
+  `tests/engineering.rs` cubre los 13 escenarios cross-repo con fixtures
+  autocontenidas.
+
 ## [0.2.0] - 2026-09-20
 
 ### Agregado

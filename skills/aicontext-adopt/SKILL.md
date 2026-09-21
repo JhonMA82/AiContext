@@ -23,6 +23,35 @@ Level 5  targeted file reads
 Level 6  broad exploration, only if evidence is still missing
 ```
 
+## Engineering-managed repositories
+
+When `scan --json` reports `engineering` (origin `engineering-platform`)
+and `subprojects_source.mode` is `engineering`, the project was
+materialized by Engineering Platform. Engineering owns the architecture;
+you complement it, never re-resolve it.
+
+1. Read `.engineering/project-map.json` (routing), `.engineering/project.json`
+   (pins, recipe, plan fingerprint), `.engineering/provenance.json` and
+   `.engineering/handoff.json` (locked decisions) first — as references,
+   never by parsing `ARCHITECTURE.md`/`AGENTS.md` for the same facts.
+2. Trust declared surfaces, destinations, foundations/boilerplates, pins,
+   database profile, plan, provenance, relationships, and locked decisions.
+   Never re-derive them with heuristics and never match on recipe names:
+   unknown recipes and surfaces work unchanged while they respect the
+   contract.
+3. The exploration budget becomes: Engineering contracts → deterministic
+   `scan` → only unresolved semantic knowledge → targeted search →
+   CodeGraph/semantics if justified → targeted reads → broad exploration
+   only if still necessary.
+4. Persist only new knowledge (patterns, purposes, constraints). Never copy
+   `project.json`/`project-map.json`/`provenance.json` into `PROJECT_STATE.md`
+   (compact references such as `Origin:`/`Architecture source:`/`Manifest
+   source:` suffice) and never edit Engineering-owned files.
+5. If a declared path no longer exists, report drift — never invent a new
+   route, silently fix the architecture, or overwrite provenance. After an
+   Engineering evolution, `status`/`check` show the drift and `sync` refreshes
+   only deterministic facts; semantic re-adoption stays a scoped skill task.
+
 ## Flow
 
 1. `aicontext scan --json` — the only starting point. Note complexity profile, package manager, version candidates, docs, CI.

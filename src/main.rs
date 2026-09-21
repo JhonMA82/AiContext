@@ -4,6 +4,7 @@ mod check;
 mod cli;
 mod config;
 mod doctor;
+mod engineering;
 mod output;
 mod scan;
 mod search;

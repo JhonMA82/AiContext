@@ -172,6 +172,15 @@ pub fn run_check(root: &Path, json: bool) -> Result<i32> {
                 passed: route_ok,
                 detail: route_detail,
             });
+            // 6d. Engineering-managed drift: filesystem vs declared truth.
+            // Engineering owns architecture; AiContext validates reality and
+            // reports contradictions without redefining or overwriting them.
+            let (eng_ok, eng_detail) = check_engineering(root);
+            findings.push(Finding {
+                name: "engineering".to_string(),
+                passed: eng_ok,
+                detail: eng_detail,
+            });
         }
         Err(e) => {
             findings.push(Finding {
@@ -470,6 +479,116 @@ fn check_subprojects_routing(root: &Path) -> (bool, String) {
         (true, notes.join("; "))
     } else {
         (false, problems.join("; "))
+    }
+}
+
+/// Engineering drift gate: validates filesystem reality against Engineering
+/// declared machine truth without reimplementing `eng doctor`.
+///
+/// - Standalone (no Engineering contracts): passes, advisory.
+/// - Supported: every declared surface path must exist as a directory;
+///   project-map surfaces must match manifest destinations; provenance
+///   fingerprints must match the manifest when provenance is present.
+///   Missing paths and mismatches fail with exact remediation (restore the
+///   path, or evolve via Engineering — never edit provenance silently).
+/// - Unsupported (partial/invalid/future contracts): fails closed with the
+///   detection reason.
+fn check_engineering(root: &Path) -> (bool, String) {
+    match crate::engineering::detect(root) {
+        crate::engineering::EngineeringDetection::Absent => (
+            true,
+            "no engineering metadata — standalone".to_string(),
+        ),
+        crate::engineering::EngineeringDetection::Unsupported {
+            reason,
+            manifest_version: _,
+            map_version: _,
+        } => (false, reason),
+        crate::engineering::EngineeringDetection::Supported(info) => {
+            let mut problems: Vec<String> = Vec::new();
+            // 1. Declared destinations must exist.
+            let mut missing: Vec<String> = Vec::new();
+            for s in &info.surfaces {
+                let p = root.join(&s.path);
+                let ok = std::fs::symlink_metadata(&p)
+                    .map(|m| !m.file_type().is_symlink() && m.is_dir())
+                    .unwrap_or(false);
+                if !ok {
+                    missing.push(format!("{} (surface {})", s.path, s.surface));
+                }
+            }
+            if !missing.is_empty() {
+                missing.sort();
+                problems.push(format!(
+                    "drift: Engineering declares {} path(s) that no longer exist: {} — restore them or evolve via Engineering (never edit .engineering/*.json by hand)",
+                    missing.len(),
+                    missing.join(", ")
+                ));
+            }
+            // 2. Map surfaces must match manifest destinations (same invariant
+            // `eng doctor` enforces as project-map-drift, observed here).
+            if let Some(manifest_value) = std::fs::read_to_string(root.join(crate::engineering::PROJECT_JSON))
+                .ok()
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            {
+                if let Some(components) = manifest_value.get("components").and_then(|c| c.as_array()) {
+                    let mut manifest_map: std::collections::BTreeMap<String, String> =
+                        std::collections::BTreeMap::new();
+                    for c in components {
+                        if let (Some(surface), Some(dest)) = (
+                            c.get("surface").and_then(|v| v.as_str()),
+                            c.get("destination").and_then(|v| v.as_str()),
+                        ) {
+                            manifest_map.insert(surface.to_string(), dest.to_string());
+                        }
+                    }
+                    let mut map_map: std::collections::BTreeMap<String, String> =
+                        std::collections::BTreeMap::new();
+                    for s in &info.surfaces {
+                        map_map.insert(s.surface.clone(), s.path.clone());
+                    }
+                    if manifest_map != map_map {
+                        problems.push(format!(
+                            "drift: {} surfaces do not match {} destinations — evolve via Engineering, then `aicontext sync`",
+                            crate::engineering::PROJECT_MAP_JSON,
+                            crate::engineering::PROJECT_JSON
+                        ));
+                    }
+                    // 3. Provenance fingerprint must match the manifest when present.
+                    if let Some(prov_value) = std::fs::read_to_string(root.join(crate::engineering::PROVENANCE_JSON))
+                        .ok()
+                        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                    {
+                        let prov_fp = prov_value
+                            .get("plan_fingerprint")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        if !prov_fp.is_empty() && prov_fp != info.plan_fingerprint {
+                            problems.push(format!(
+                                "drift: {} plan_fingerprint does not match {} — evolve via Engineering, then `aicontext sync`",
+                                crate::engineering::PROVENANCE_JSON,
+                                crate::engineering::PROJECT_JSON
+                            ));
+                        }
+                    }
+                }
+            }
+            if problems.is_empty() {
+                let mut detail = format!(
+                    "engineering-managed: {} surface(s) verified (recipe {}, map v{}, manifest v{})",
+                    info.surfaces.len(),
+                    info.recipe,
+                    info.map_schema_version,
+                    info.manifest_schema_version
+                );
+                if let Some(db) = info.database_profile.as_ref() {
+                    detail.push_str(&format!("; database profile {db}"));
+                }
+                (true, detail)
+            } else {
+                (false, problems.join("; "))
+            }
+        }
     }
 }
 

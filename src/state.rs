@@ -493,6 +493,35 @@ pub(crate) fn generated_block(report: &ScanReport) -> String {
         "Last synchronized commit: {}\n",
         report.git.short_head.as_deref().unwrap_or("unknown")
     ));
+    // Engineering-managed origin: compact references, never a copy of the
+    // source JSON. Standalone repos emit no Origin lines (byte-identical).
+    if let Some(eng) = report.engineering.as_ref() {
+        if eng.supported {
+            s.push_str("Origin: engineering-platform\n");
+            s.push_str("Architecture source: .engineering/project-map.json\n");
+            s.push_str("Manifest source: .engineering/project.json\n");
+            if let (Some(recipe), Some(project)) = (eng.recipe.as_ref(), eng.project.as_ref())
+            {
+                s.push_str(&format!("Recipe: {recipe} (project {project})\n"));
+            } else if let Some(recipe) = eng.recipe.as_ref() {
+                s.push_str(&format!("Recipe: {recipe}\n"));
+            }
+            s.push_str(&format!("Surfaces: {} (engineering-managed)\n", eng.surfaces));
+            if let Some(db) = eng.database_profile.as_ref() {
+                s.push_str(&format!("Database profile: {db}\n"));
+            }
+            if let Some(fp) = eng.plan_fingerprint.as_ref() {
+                s.push_str(&format!("Plan fingerprint: {fp}\n"));
+            }
+        } else {
+            s.push_str("Origin: engineering-platform (unsupported)\n");
+            if let Some(reason) = eng.reason.as_ref() {
+                let one_line = reason.split_whitespace().collect::<Vec<_>>().join(" ");
+                let clipped: String = one_line.chars().take(200).collect();
+                s.push_str(&format!("Engineering status: {clipped}\n"));
+            }
+        }
+    }
     if let Some(v) = report.version_candidates.first() {
         s.push_str(&format!("Version: {} ({})\n", v.version, v.source));
     }
@@ -1066,12 +1095,23 @@ pub fn cmd_status(json: bool) -> Result<i32> {
         }
     }
     let total = detected.len();
+    let detection = crate::engineering::detect(&root);
+    let origin = crate::engineering::origin_label(&detection).to_string();
     if json {
         #[derive(Serialize)]
         struct SubprojectsOut {
             total: usize,
             adopted: usize,
             pending: usize,
+        }
+        #[derive(Serialize)]
+        struct EngineeringOut {
+            recipe: String,
+            project: String,
+            surfaces: usize,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            database_profile: Option<String>,
+            plan_fingerprint: String,
         }
         #[derive(Serialize)]
         struct StatusOut<'a> {
@@ -1082,8 +1122,21 @@ pub fn cmd_status(json: bool) -> Result<i32> {
             complexity: &'a str,
             last_check: &'a str,
             subprojects: SubprojectsOut,
+            origin: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            engineering: Option<EngineeringOut>,
         }
         let root_str = root.to_string_lossy().into_owned();
+        let engineering = match &detection {
+            crate::engineering::EngineeringDetection::Supported(info) => Some(EngineeringOut {
+                recipe: info.recipe.clone(),
+                project: info.project.clone(),
+                surfaces: info.surfaces.len(),
+                database_profile: info.database_profile.clone(),
+                plan_fingerprint: info.plan_fingerprint.clone(),
+            }),
+            _ => None,
+        };
         let out = StatusOut {
             schema: "aicontext/status/v1",
             repo: &root_str,
@@ -1096,6 +1149,8 @@ pub fn cmd_status(json: bool) -> Result<i32> {
                 adopted,
                 pending,
             },
+            origin: &origin,
+            engineering,
         };
         println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(0);
@@ -1103,6 +1158,21 @@ pub fn cmd_status(json: bool) -> Result<i32> {
     println!("AIContext v0.1");
     println!("Repo: {}", root.to_string_lossy());
     println!("State: {state_label}");
+    // Engineering origin: compact reference only when managed. Standalone
+    // output stays byte-identical to previous releases.
+    if let crate::engineering::EngineeringDetection::Supported(info) = &detection {
+        println!("Origin: engineering-platform (recipe {})", info.recipe);
+        println!(
+            "Architecture: {} surface(s) via .engineering/project-map.json",
+            info.surfaces.len()
+        );
+    } else if let crate::engineering::EngineeringDetection::Unsupported { reason, .. } =
+        &detection
+    {
+        let one_line = reason.split_whitespace().collect::<Vec<_>>().join(" ");
+        let clipped: String = one_line.chars().take(160).collect();
+        println!("Origin: engineering-platform (unsupported: {clipped})");
+    }
     println!("HEAD: {}", report.git.short_head.as_deref().unwrap_or("?"));
     println!("Complexity: {}", report.complexity.profile);
     println!();

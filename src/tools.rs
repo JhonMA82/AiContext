@@ -268,6 +268,7 @@ fn empty_report(root: &std::path::Path) -> crate::scan::ScanReport {
             unresolved: Vec::new(),
             containers: Vec::new(),
         },
+        engineering: None,
     }
 }
 
