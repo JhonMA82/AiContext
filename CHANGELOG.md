@@ -14,6 +14,13 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
   `curl | sh` / `irm | iex` documentado en `installers/README.md` y tests
   offline en `tests/installers.rs`.
 
+### Corregido
+
+- `self update` descubre la última versión vía GitHub Releases API y el
+  fallback cargo usa `cargo install --git … --tag vX.Y.Z` (el crate no está
+  publicado en crates.io); los fallbacks de `installers/` siguen la misma
+  ruta git.
+
 ## [0.4.0] - 2026-09-21
 
 ### Agregado

@@ -33,8 +33,10 @@ irm https://raw.githubusercontent.com/JhonMA82/AiContext/main/installers/install
 
 Origen primario: el instalador oficial de cargo-dist publicado en GitHub
 Releases (`aicontext-installer.sh/ps1`, con checksums por target). Si la
-descarga falla y hay toolchain Rust, se usa `cargo install aicontext
---locked` como fallback (`--no-cargo-fallback` lo prohíbe).
+descarga falla y hay toolchain Rust, se usa
+`cargo install --git https://github.com/JhonMA82/AiContext --locked`
+como fallback (el crate no está publicado en crates.io;
+`--no-cargo-fallback` lo prohíbe).
 
 Flags comunes (`.sh`): `--version latest|0.4.0|v0.4.0`, `--prefix DIR`,
 `--bin-dir DIR`, `--yes` (compat, la instalación nunca pregunta),

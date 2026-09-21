@@ -13,7 +13,9 @@ const SELF_UPDATE_SCHEMA: &str = "aicontext/self-update/v1";
 const SELF_UNINSTALL_SCHEMA: &str = "aicontext/self-uninstall/v1";
 
 const INSTALLER_CMD: &str = "curl -LsSf https://github.com/JhonMA82/AiContext/releases/latest/download/aicontext-installer.sh | sh";
-const CARGO_INSTALL_CMD: &str = "cargo install aicontext --locked";
+const GIT_URL: &str = "https://github.com/JhonMA82/AiContext";
+const CARGO_INSTALL_CMD: &str =
+    "cargo install --git https://github.com/JhonMA82/AiContext --locked";
 
 fn current_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
@@ -22,19 +24,27 @@ fn current_version() -> String {
 fn registry_url() -> String {
     // AICONTEXT_REGISTRY_URL exists so tests can point discovery at an
     // unroutable address and exercise the offline path without network.
-    std::env::var("AICONTEXT_REGISTRY_URL")
-        .unwrap_or_else(|_| "https://crates.io/api/v1/crates/aicontext".to_string())
+    // Default is the GitHub Releases API: the crate is not published on
+    // crates.io, so crates.io discovery always reports "not found".
+    std::env::var("AICONTEXT_REGISTRY_URL").unwrap_or_else(|_| {
+        "https://api.github.com/repos/JhonMA82/AiContext/releases/latest".to_string()
+    })
 }
 
-/// Version discovery uses the crates.io API, not the GitHub releases API:
-/// a single JSON document with a stable `crate.max_version` field, no
+/// Version discovery uses the GitHub Releases API, not the crates.io API:
+/// the crate is not published on crates.io, and GitHub is where
+/// cargo-dist publishes releases. The endpoint returns a single JSON
+/// document with a stable `tag_name` field (`vX.Y.Z`), no
 /// redirect-following or auth needed, and the same curl-based bounded call
 /// pattern as crate::output::command_output (short max-time plus an outer
 /// deadline, so an unreachable registry degrades instead of hanging).
+/// An explicit User-Agent is sent because both the GitHub and crates.io
+/// APIs reject bare requests (crates.io answers 403 without one).
 fn fetch_latest_version() -> Option<String> {
     let url = registry_url();
+    let agent = format!("aicontext/{}", current_version());
     let mut cmd = Command::new("curl");
-    cmd.args(["-sS", "--max-time", "5", &url]);
+    cmd.args(["-sS", "-f", "--max-time", "5", "-A", &agent, &url]);
     let out = crate::output::command_output(cmd, 10)?;
     if !out.status.success() {
         return None;
@@ -87,6 +97,35 @@ fn compare_versions(current: &str, latest: &str) -> Ordering {
                 return rank;
             }
         }
+    }
+}
+
+/// The crate is not published on crates.io, so updates come from the git
+/// repository itself. When the latest release tag is known the install is
+/// pinned to `v{latest}`; otherwise it tracks the default branch.
+fn cargo_install_args(latest: Option<&str>) -> Vec<String> {
+    match latest {
+        Some(known) => vec![
+            "install".to_string(),
+            "--git".to_string(),
+            GIT_URL.to_string(),
+            "--tag".to_string(),
+            format!("v{known}"),
+            "--locked".to_string(),
+        ],
+        None => vec![
+            "install".to_string(),
+            "--git".to_string(),
+            GIT_URL.to_string(),
+            "--locked".to_string(),
+        ],
+    }
+}
+
+fn cargo_install_display(latest: Option<&str>) -> String {
+    match latest {
+        Some(known) => format!("cargo install --git {GIT_URL} --tag v{known} --locked"),
+        None => CARGO_INSTALL_CMD.to_string(),
     }
 }
 
@@ -218,11 +257,12 @@ pub fn cmd_update(check: bool, yes: bool, json: bool) -> Result<i32> {
         return Ok(0);
     }
     if cargo_present() {
+        let display = cargo_install_display(latest.as_deref());
         let mut cmd = Command::new("cargo");
-        cmd.args(["install", "aicontext", "--locked"]);
+        cmd.args(cargo_install_args(latest.as_deref()));
         match crate::output::command_output(cmd, 300) {
             Some(out) if out.status.success() => {
-                let note = format!("updated via `{CARGO_INSTALL_CMD}`");
+                let note = format!("updated via `{display}`");
                 if json {
                     println!(
                         "{}",
@@ -245,10 +285,10 @@ pub fn cmd_update(check: bool, yes: bool, json: bool) -> Result<i32> {
                 let e = crate::output::AiError::new(
                     "TOOL_EXECUTION_FAILURE",
                     format!(
-                        "`{CARGO_INSTALL_CMD}` failed; latest known: {}",
+                        "`{display}` failed; latest known: {}",
                         latest.as_deref().unwrap_or("unknown (offline?)")
                     ),
-                    Some(CARGO_INSTALL_CMD),
+                    Some(&display),
                 );
                 crate::output::print_error(&anyhow::anyhow!(e), json);
                 return Ok(5);
@@ -490,5 +530,39 @@ mod tests {
         assert_eq!(extract_version(&tagged).as_deref(), Some("0.9.0"));
         let empty: serde_json::Value = serde_json::from_str(r#"{"crate":{}}"#).unwrap();
         assert_eq!(extract_version(&empty), None);
+    }
+
+    #[test]
+    fn extract_version_handles_github_release_shape() {
+        let release: serde_json::Value = serde_json::from_str(
+            r#"{"tag_name":"v0.4.0","name":"0.4.0","draft":false,"prerelease":false}"#,
+        )
+        .unwrap();
+        assert_eq!(extract_version(&release).as_deref(), Some("0.4.0"));
+    }
+
+    #[test]
+    fn cargo_install_uses_git_and_pins_tag() {
+        let pinned = cargo_install_args(Some("0.4.0"));
+        assert_eq!(
+            pinned,
+            vec![
+                "install",
+                "--git",
+                GIT_URL,
+                "--tag",
+                "v0.4.0",
+                "--locked"
+            ]
+        );
+        let display = cargo_install_display(Some("0.4.0"));
+        assert!(display.contains("--git"), "display must show git: {display}");
+        assert!(display.contains("--tag v0.4.0"), "display must pin tag: {display}");
+        assert!(
+            !display.contains("cargo install aicontext "),
+            "must not use the unpublished crates.io name: {display}"
+        );
+        let unpinned = cargo_install_args(None);
+        assert_eq!(unpinned, vec!["install", "--git", GIT_URL, "--locked"]);
     }
 }

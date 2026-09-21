@@ -118,11 +118,11 @@ do_update() {
   trap - EXIT INT TERM
   if [ "$USE_CARGO_FALLBACK" -eq 1 ] && command -v cargo >/dev/null 2>&1; then
     if [ "$VERSION" = "latest" ]; then
-      log "falling back to: cargo install $APP --locked"
-      exec cargo install "$APP" --locked
+      log "falling back to: cargo install --git https://github.com/$REPO --locked"
+      exec cargo install --git "https://github.com/$REPO" --locked
     else
-      log "falling back to: cargo install $APP --locked --version $VERSION"
-      exec cargo install "$APP" --locked --version "$VERSION"
+      log "falling back to: cargo install --git https://github.com/$REPO --tag v$VERSION --locked"
+      exec cargo install --git "https://github.com/$REPO" --tag "v$VERSION" --locked
     fi
   fi
   err "update failed: official installer unreachable and no cargo fallback available"

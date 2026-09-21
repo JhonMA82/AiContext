@@ -237,10 +237,12 @@ cargo run -- self update --yes # actualiza (requiere --yes)
 aicontext self uninstall --managed --yes  # remueve solo estado owned (requiere --yes)
 ```
 
-- `self update`: descubre la última versión vía crates.io API con timeout
-  acotado (offline degrada a mensaje claro, nunca cuelga); `--check` es
-  siempre read-only. La actualización usa el instalador oficial si hay
-  evidencia de install cargo-dist, si no `cargo install aicontext --locked`.
+- `self update`: descubre la última versión vía GitHub Releases API con
+  timeout acotado (offline degrada a mensaje claro, nunca cuelga);
+  `--check` es siempre read-only. La actualización usa el instalador
+  oficial si hay evidencia de install cargo-dist, si no
+  `cargo install --git https://github.com/JhonMA82/AiContext --locked`
+  (el crate no está publicado en crates.io, por eso el fallback es git).
 - `self uninstall`: remueve solo estado owned — el binario (únicamente
   dentro de un prefijo managed o cargo bin), herramientas registradas en
   el ownership registry y skills con manifiesto de ownership. Sin `--yes`

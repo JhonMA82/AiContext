@@ -1,6 +1,7 @@
 # Remote installer for aicontext (PowerShell).
 # Primary source: official cargo-dist installer published on GitHub Releases.
-# Fallback: cargo install from crates.io (requires a Rust toolchain).
+# Fallback: cargo install from the git repository (the crate is not
+# published on crates.io; requires a Rust toolchain).
 # Only writes inside the user prefix; never touches project manifests.
 param(
   [string]$Version = "latest",
@@ -65,11 +66,11 @@ function Invoke-CargoFallback {
   if ($NoCargoFallback) { return $false }
   if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { return $false }
   if ($CleanVersion -eq "latest") {
-    Write-Output "falling back to: cargo install $App --locked"
-    & cargo install $App --locked
+    Write-Output "falling back to: cargo install --git https://github.com/$Repo --locked"
+    & cargo install --git "https://github.com/$Repo" --locked
   } else {
-    Write-Output "falling back to: cargo install $App --locked --version $CleanVersion"
-    & cargo install $App --locked --version $CleanVersion
+    Write-Output "falling back to: cargo install --git https://github.com/$Repo --tag v$CleanVersion --locked"
+    & cargo install --git "https://github.com/$Repo" --tag "v$CleanVersion" --locked
   }
   return ($LASTEXITCODE -eq 0)
 }

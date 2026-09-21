@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 # Remote installer for aicontext (POSIX sh).
 # Primary source: official cargo-dist installer published on GitHub Releases.
-# Fallback: cargo install from crates.io (requires a Rust toolchain).
+# Fallback: cargo install from the git repository (the crate is not
+# published on crates.io; requires a Rust toolchain).
 # Only writes inside the user prefix; no root needed; never touches
 # project manifests or .engineering/ dirs.
 set -eu
@@ -102,11 +103,11 @@ run_cargo_fallback() {
     return 1
   fi
   if [ "$VERSION" = "latest" ]; then
-    log "installer download failed; falling back to: cargo install $APP --locked"
-    cargo install "$APP" --locked
+    log "installer download failed; falling back to: cargo install --git https://github.com/$REPO --locked"
+    cargo install --git "https://github.com/$REPO" --locked
   else
-    log "installer download failed; falling back to: cargo install $APP --locked --version $VERSION"
-    cargo install "$APP" --locked --version "$VERSION"
+    log "installer download failed; falling back to: cargo install --git https://github.com/$REPO --tag v$VERSION --locked"
+    cargo install --git "https://github.com/$REPO" --tag "v$VERSION" --locked
   fi
 }
 
@@ -129,7 +130,7 @@ main() {
     log "installed $APP via cargo"
   else
     err "install failed: could not download the official installer"
-    err "try again later, or (with a Rust toolchain) run: cargo install $APP --locked"
+    err "try again later, or (with a Rust toolchain) run: cargo install --git https://github.com/$REPO --locked"
     exit 5
   fi
   if verify_install; then

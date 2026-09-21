@@ -71,8 +71,8 @@ if (-not $managedOk) {
     Write-Output "updated $App into $InstallDir"
   } catch {
     if ((-not $NoCargoFallback) -and (Get-Command cargo -ErrorAction SilentlyContinue)) {
-      if ($CleanVersion -eq "latest") { & cargo install $App --locked }
-      else { & cargo install $App --locked --version $CleanVersion }
+      if ($CleanVersion -eq "latest") { & cargo install --git "https://github.com/$Repo" --locked }
+      else { & cargo install --git "https://github.com/$Repo" --tag "v$CleanVersion" --locked }
       if ($LASTEXITCODE -ne 0) { Write-Error "update failed"; exit 5 }
     } else {
       Write-Error "update failed: $($_.Exception.Message)"
