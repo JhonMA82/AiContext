@@ -546,18 +546,17 @@ mod tests {
         let pinned = cargo_install_args(Some("0.4.0"));
         assert_eq!(
             pinned,
-            vec![
-                "install",
-                "--git",
-                GIT_URL,
-                "--tag",
-                "v0.4.0",
-                "--locked"
-            ]
+            vec!["install", "--git", GIT_URL, "--tag", "v0.4.0", "--locked"]
         );
         let display = cargo_install_display(Some("0.4.0"));
-        assert!(display.contains("--git"), "display must show git: {display}");
-        assert!(display.contains("--tag v0.4.0"), "display must pin tag: {display}");
+        assert!(
+            display.contains("--git"),
+            "display must show git: {display}"
+        );
+        assert!(
+            display.contains("--tag v0.4.0"),
+            "display must pin tag: {display}"
+        );
         assert!(
             !display.contains("cargo install aicontext "),
             "must not use the unpublished crates.io name: {display}"
