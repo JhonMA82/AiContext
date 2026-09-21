@@ -140,6 +140,11 @@ materializados por Engineering Platform y los trata como
 - **Sin dependencias runtime** entre ambos ni lógica por receta: AiContext
   nunca decide por nombre de receta (`GP-01`…) y funciona con superficies
   desconocidas mientras respeten el contrato.
+- **Enriquecimiento de producto aparte:** entre la fundación y la
+  implementación vive la etapa Product Plan (skill `product-plan`:
+  dominio, reglas, MVP, permisos, edge cases → `.planning/PRODUCT_PLAN.md`
+  con gate READY determinista). AiContext la observa solo como evidencia,
+  nunca mueve esa responsabilidad a `PROJECT_STATE`/`PATTERNS`.
 
 ### Ownership de `.engineering/`
 
