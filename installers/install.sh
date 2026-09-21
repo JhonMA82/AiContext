@@ -82,10 +82,12 @@ run_official_installer() {
   url="$(installer_url)"
   log "downloading official installer: $url"
   if curl --proto '=https' --tlsv1.2 -LsSf --max-time 60 "$url" -o "$tmp"; then
-    log "running official installer into: $BIN_DIR"
+    log "running official installer with base dir: $(dirname "$BIN_DIR") (binaries land in $BIN_DIR)"
     mkdir -p "$BIN_DIR"
-    # cargo-dist installers honor <APP>_INSTALL_DIR (here AICONTEXT_INSTALL_DIR).
-    AICONTEXT_INSTALL_DIR="$BIN_DIR" sh "$tmp"
+    # cargo-dist installers honor <APP>_INSTALL_DIR (here
+    # AICONTEXT_INSTALL_DIR) and append `bin` themselves, so they receive
+    # the parent of BIN_DIR (passing BIN_DIR would nest `<dir>/bin/bin`).
+    AICONTEXT_INSTALL_DIR="$(dirname "$BIN_DIR")" sh "$tmp"
     rm -f "$tmp"
     trap - EXIT INT TERM
     return 0

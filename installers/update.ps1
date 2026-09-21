@@ -65,7 +65,11 @@ if (-not $managedOk) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmp -TimeoutSec 60
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-    $env:AICONTEXT_INSTALL_DIR = $InstallDir
+    # Same base-dir contract as install.sh: the official installer appends
+    # `bin` itself, so it receives the parent of the bin dir.
+    $base = Split-Path $InstallDir -Parent
+    if ([string]::IsNullOrEmpty($base)) { $base = $InstallDir }
+    $env:AICONTEXT_INSTALL_DIR = $base
     & powershell -ExecutionPolicy Bypass -File $tmp
     if ($LASTEXITCODE -ne 0) { throw "official installer exited with code $LASTEXITCODE" }
     Write-Output "updated $App into $InstallDir"

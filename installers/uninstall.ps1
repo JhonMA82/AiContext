@@ -41,11 +41,14 @@ function Test-InsideOwned($Path, $Roots) {
 
 $roots = @($InstallDir, (Join-Path $env:USERPROFILE ".cargo"), (Join-Path $env:USERPROFILE ".local"), $ManagedPrefix)
 
-# 1. Binary candidates (owned prefixes only).
+# 1. Binary candidates (owned prefixes only). The trailing legacy entries
+# cover installs made by early 0.5.0 wrappers, which nested `<dir>/bin/bin`.
 $candidates = @(
   (Join-Path $InstallDir "$App.exe"),
   (Join-Path $InstallDir $App),
-  (Join-Path $ManagedPrefix "bin\$App.exe")
+  (Join-Path $ManagedPrefix "bin\$App.exe"),
+  (Join-Path $InstallDir "bin\$App.exe"),
+  (Join-Path $InstallDir "bin\$App")
 )
 $seen = @{}
 foreach ($candidate in $candidates) {

@@ -108,7 +108,9 @@ do_update() {
   log "downloading official installer: $url"
   if curl --proto '=https' --tlsv1.2 -LsSf --max-time 60 "$url" -o "$tmp"; then
     mkdir -p "$BIN_DIR"
-    AICONTEXT_INSTALL_DIR="$BIN_DIR" sh "$tmp"
+    # Same base-dir contract as install.sh: the official installer appends
+    # `bin` itself, so it receives the parent of BIN_DIR.
+    AICONTEXT_INSTALL_DIR="$(dirname "$BIN_DIR")" sh "$tmp"
     rm -f "$tmp"
     trap - EXIT INT TERM
     log "updated $APP into $BIN_DIR"

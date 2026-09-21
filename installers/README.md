@@ -13,6 +13,10 @@ nunca archivos ajenos, manifests del proyecto ni `.engineering/`.
 
 ## Instalación remota
 
+El binario queda en `<prefijo>/bin` (`~/.local/bin` por defecto): los
+scripts pasan al instalador oficial el directorio base y este añade
+`bin` él mismo.
+
 Unix (última versión):
 
 ```sh
@@ -61,7 +65,6 @@ Windows: `update.ps1` con `-Check` / `-Yes` (`-Version`, `-InstallDir`,
 `-NoCargoFallback`).
 
 ## Desinstalación remota
-
 ```sh
 curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.5.0/installers/uninstall.sh | sh -s -- --managed --yes
 ```
@@ -76,6 +79,17 @@ curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.5.0/installer
   (`.aicontext-managed.json`); sin manifiesto se deja intacto.
 
 Windows: `uninstall.ps1 -Managed -Yes`.
+
+## Problemas comunes
+
+- **El instalador oficial avisa de comandos eclipsados (`shadowed`)** o
+  `aicontext --version` sigue mostrando una versión vieja: hay otro
+  binario antes en el `PATH` (p. ej. `~/.cargo/bin/aicontext`). Localízalos
+  con `command -v -a aicontext`, elimina el obsoleto y recarga con
+  `hash -r`.
+- **Binario en `<prefijo>/bin/bin`** (instaladores previos a esta
+  corrección): mueve el binario a `<prefijo>/bin` o reejecuta el
+  instalador; `uninstall.sh --managed --yes` también limpia ese resto.
 
 ## Seguridad
 

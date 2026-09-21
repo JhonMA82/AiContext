@@ -2,6 +2,14 @@
 
 Formato basado en Keep a Changelog. Versiones: SemVer.
 
+## [Unreleased]
+
+### Corregido
+
+- Los wrappers remotos pasan al instalador oficial el directorio base
+  (este añade `bin` él mismo): ya no se anida `<prefijo>/bin/bin`. El
+  desinstalador limpia ese resto legado.
+
 ## [0.5.0] - 2026-09-21
 
 ### Agregado

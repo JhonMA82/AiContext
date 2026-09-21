@@ -79,9 +79,11 @@ remove_file_owned() {
 }
 
 remove_binary() {
-  # Candidates in priority order; deduplicated by exact path.
+  # Candidates in priority order; deduplicated by exact path. The trailing
+  # legacy entries cover installs made by early 0.5.0 wrappers, which passed
+  # the bin dir itself as the install base and nested `<dir>/bin/bin`.
   seen=""
-  for candidate in "$BIN_DIR/$APP" "$HOME/.cargo/bin/$APP" "$HOME/.local/bin/$APP" "$MANAGED_PREFIX/bin/$APP"; do
+  for candidate in "$BIN_DIR/$APP" "$HOME/.cargo/bin/$APP" "$HOME/.local/bin/$APP" "$MANAGED_PREFIX/bin/$APP" "$BIN_DIR/bin/$APP" "$PREFIX/bin/bin/$APP" "$HOME/.local/bin/bin/$APP"; do
     case ":$seen:" in
       *":$candidate:"*) continue ;;
     esac

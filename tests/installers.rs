@@ -89,11 +89,16 @@ fn install_script_uses_official_release_source() {
         body.contains("AICONTEXT_INSTALL_DIR"),
         "must honor the dist install-dir env contract"
     );
+    assert!(
+        body.contains("dirname"),
+        "must pass the parent of the bin dir to the official installer (it appends `bin` itself; avoids `<dir>/bin/bin`)"
+    );
 }
 
 #[test]
 fn update_script_check_is_readonly_and_yes_guarded() {
     let body = read_script("update.sh");
+    assert!(body.contains("dirname"), "must share install.sh base-dir contract");
     assert!(body.contains("--check"), "must support --check");
     assert!(body.contains("--yes"), "must support --yes");
     assert!(
@@ -129,6 +134,10 @@ fn uninstall_script_only_touches_owned_state() {
         "must consult the ownership registry with --managed"
     );
     assert!(
+        body.contains("bin/bin"),
+        "must clean legacy nested `<dir>/bin/bin` binaries from early wrappers"
+    );
+    assert!(
         body.contains("left untouched"),
         "must report foreign files instead of removing them"
     );
@@ -150,6 +159,10 @@ fn uninstall_script_only_touches_owned_state() {
 fn powershell_scripts_mirror_unix_contract() {
     for name in ["install.ps1", "update.ps1"] {
         let body = read_script(name);
+        assert!(
+            body.contains("Split-Path"),
+            "{name} must pass the parent of the bin dir to the official installer"
+        );
         assert!(
             body.contains("JhonMA82/AiContext"),
             "{name} must point at the GitHub repo"
