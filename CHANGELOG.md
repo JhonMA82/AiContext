@@ -2,7 +2,7 @@
 
 Formato basado en Keep a Changelog. Versiones: SemVer.
 
-## [Unreleased]
+## [0.4.0] - 2026-09-21
 
 ### Agregado
 
