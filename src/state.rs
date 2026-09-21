@@ -884,11 +884,16 @@ pub fn cmd_init(
     std::fs::create_dir_all(&eng)?;
     std::fs::create_dir_all(eng.join("rules/ast-grep"))?;
 
-    // aicontext.toml — never overwrite an existing manifest.
+    // aicontext.toml — never overwrite an existing manifest. The version
+    // source is detected like nested contexts do, so non-JS roots
+    // (Cargo.toml, go.mod, pyproject.toml) pass their own `version` gate
+    // without hand-editing; with no version file the historical default
+    // stays and `check` reports the missing file.
     let manifest_path = root.join(REPO_MANIFEST);
     if !manifest_path.exists() {
         let name = repo_name_from_root(&root);
-        std::fs::write(&manifest_path, config::minimal_toml(&name, &profile))?;
+        let source = config::version_source_for(&root);
+        std::fs::write(&manifest_path, config::minimal_toml(&name, &profile, source))?;
     }
     // Scan first: PROJECT_STATE and consistency.yml are both seeded from
     // detected facts, so a fresh `init` passes `check` and later drift fails.

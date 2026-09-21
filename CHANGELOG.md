@@ -4,6 +4,14 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ## [Unreleased]
 
+### Agregado
+
+- `init` autodetecta `version.source` en la raíz (`package.json` →
+  `Cargo.toml` → `go.mod` → `pyproject.toml`, como ya hacía en contextos
+  anidados), así que proyectos non-JS pasan su gate `version` sin edición
+  manual. Sin archivo de versión se mantiene el default histórico y
+  `check` reporta el faltante.
+
 ### Corregido
 
 - `sync` converge en una sola pasada tras cambios de topología: refresca

@@ -292,3 +292,54 @@ fn structural_clean_case() {
         Some(true)
     );
 }
+
+/// Synthetic temp repo from `(relative path, contents)` pairs.
+fn synth_repo(tag: &str, files: &[(&str, &str)]) -> PathBuf {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let base = std::env::temp_dir().join(format!(
+        "aicontext-cons-synth-{tag}-{}-{n}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    if base.exists() {
+        std::fs::remove_dir_all(&base).expect("clean");
+    }
+    for (rel, content) in files {
+        let path = base.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("mkdir");
+        }
+        std::fs::write(path, content).expect("write");
+    }
+    git(&base, ["init", "-q"]);
+    git(&base, ["add", "-A"]);
+    git(&base, ["commit", "-qm", "fixture"]);
+    base
+}
+
+#[test]
+fn init_detects_cargo_version_source_at_root() {
+    let dir = synth_repo(
+        "cargo-root",
+        &[(
+            "Cargo.toml",
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        )],
+    );
+    let (c, _) = run(&dir, ["init", "--non-interactive"]);
+    let _ = c;
+    let (cs, sout) = run(&dir, ["sync"]);
+    assert_eq!(cs, 0, "sync must converge: {sout}");
+    let manifest = std::fs::read_to_string(dir.join(".engineering/aicontext.toml")).unwrap();
+    assert!(
+        manifest.contains("source = \"Cargo.toml\""),
+        "root manifest must carry the detected source:\n{manifest}"
+    );
+    let (code, out) = run(&dir, ["check", "--json"]);
+    assert_eq!(code, 0, "cargo-only root must pass check: {out}");
+    assert_eq!(
+        finding(&out, "version").get("passed").and_then(|p| p.as_bool()),
+        Some(true)
+    );
+}

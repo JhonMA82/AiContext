@@ -180,7 +180,8 @@ contra la realidad (no solo schema):
   eliminado, el finding indica el archivo. `init` siembra la lista desde
   el scan.
 - `version.projections`: cada archivo listado debe contener literalmente
-  la versión resuelta desde `version.source`.
+  la versión resuelta desde `version.source` (`init` lo detecta:
+  `package.json` → `Cargo.toml` → `go.mod` → `pyproject.toml`).
 - `protected`: cada path listado debe existir.
 - `checks.ast_grep.rules`: cada regla `*.yml` del directorio se ejecuta
   con `ast-grep scan --rule --json`; cualquier match es violación. Sin

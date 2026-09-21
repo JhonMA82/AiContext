@@ -275,7 +275,7 @@ impl ConsistencyFile {
     }
 }
 
-pub fn minimal_toml(project_name: &str, profile: &str) -> String {
+pub fn minimal_toml(project_name: &str, profile: &str, version_source: &str) -> String {
     format!(
         r#"schema = "aicontext/v1"
 
@@ -288,7 +288,7 @@ project_state = "{PROJECT_STATE}"
 patterns = "{PATTERNS}"
 
 [version]
-source = "package.json"
+source = "{version_source}"
 
 [search]
 text = "auto"
@@ -314,10 +314,10 @@ containers = []
     )
 }
 
-/// Version source for a freshly initialized root: the first version file
-/// that exists (npm first, then cargo, Go, Python). The root keeps its
-/// historical `package.json` default; nested contexts use this so a Rust
-/// or Go subproject passes its own `version` gate.
+/// Version source for a freshly initialized context: the first version file
+/// that exists (npm first, then cargo, Go, Python), falling back to the
+/// historical `package.json` default when none exists (the `version` gate
+/// then reports the missing file instead of guessing).
 pub fn version_source_for(dir: &Path) -> &'static str {
     for candidate in ["package.json", "Cargo.toml", "go.mod", "pyproject.toml"] {
         if dir.join(candidate).exists() {
@@ -337,11 +337,7 @@ pub fn minimal_nested_toml(
     version_source: &str,
     parent_rel: &str,
 ) -> String {
-    let mut out = minimal_toml(project_name, profile).replacen(
-        "source = \"package.json\"",
-        &format!("source = \"{version_source}\""),
-        1,
-    );
+    let mut out = minimal_toml(project_name, profile, version_source);
     out.push_str(&format!("\n[subproject]\nparent = \"{parent_rel}\"\n"));
     out
 }
