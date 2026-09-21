@@ -287,8 +287,23 @@ cargo dist build   # artefactos locales en target/distrib/
 
 Publicar: `git tag vX.Y.Z && git push origin vX.Y.Z` — CI construye
 los 5 targets y publica el GitHub Release con checksums.
-Instalación:
+Instalación (instalador oficial):
 
 ```bash
 curl -LsSf https://github.com/JhonMA82/AiContext/releases/latest/download/aicontext-installer.sh | sh
 ```
+
+Instalación/actualización/desinstalación remota versionada
+(`installers/`, con fallback a `cargo install --locked` y soporte
+`--version`, `--check`, `--managed --yes`):
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/main/installers/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/main/installers/update.sh | sh -s -- --check
+curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/main/installers/update.sh | sh -s -- --yes
+curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/main/installers/uninstall.sh | sh -s -- --managed --yes
+```
+
+Windows (PowerShell): `installers/install.ps1`, `update.ps1 -Check` /
+`-Yes`, `uninstall.ps1 -Managed -Yes`. Detalle y flags en
+`installers/README.md`.

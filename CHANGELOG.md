@@ -2,6 +2,18 @@
 
 Formato basado en Keep a Changelog. Versiones: SemVer.
 
+## [0.5.0] - 2026-09-21
+
+### Agregado
+
+- Instaladores remotos versionados en `installers/`: `install.sh/ps1`,
+  `update.sh/ps1` (`--check` solo lectura, actualización exige `--yes`) y
+  `uninstall.sh/ps1` (`--managed --yes`, solo estado owned con manifiesto
+  y registry). Origen primario: instalador oficial de cargo-dist en GitHub
+  Releases; fallback `cargo install --locked`. Uso remoto vía
+  `curl | sh` / `irm | iex` documentado en `installers/README.md` y tests
+  offline en `tests/installers.rs`.
+
 ## [0.4.0] - 2026-09-21
 
 ### Agregado
