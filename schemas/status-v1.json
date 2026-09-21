@@ -29,6 +29,14 @@
       }
     },
     "origin": { "type": "string" },
+    "paths": {
+      "type": "object",
+      "required": ["project_state", "patterns"],
+      "properties": {
+        "project_state": { "type": "string" },
+        "patterns": { "type": "string" }
+      }
+    },
     "engineering": {
       "type": "object",
       "required": ["recipe", "project", "surfaces", "plan_fingerprint"],

@@ -1153,6 +1153,16 @@ pub fn cmd_status(json: bool) -> Result<i32> {
             origin: &'a str,
             #[serde(skip_serializing_if = "Option::is_none")]
             engineering: Option<EngineeringOut>,
+            /// Resolved context file paths (repo-relative, as configured),
+            /// so consumers never hardcode `.engineering/...` locations.
+            /// Absent when uninitialized.
+            #[serde(skip_serializing_if = "Option::is_none")]
+            paths: Option<PathsOut>,
+        }
+        #[derive(Serialize)]
+        struct PathsOut {
+            project_state: String,
+            patterns: String,
         }
         let root_str = root.to_string_lossy().into_owned();
         let engineering = match &detection {
@@ -1164,6 +1174,13 @@ pub fn cmd_status(json: bool) -> Result<i32> {
                 plan_fingerprint: info.plan_fingerprint.clone(),
             }),
             _ => None,
+        };
+        let paths = match &cfg {
+            Ok(c) => Some(PathsOut {
+                project_state: c.state.project_state.clone(),
+                patterns: c.state.patterns.clone(),
+            }),
+            Err(_) => None,
         };
         let out = StatusOut {
             schema: "aicontext/status/v1",
@@ -1179,6 +1196,7 @@ pub fn cmd_status(json: bool) -> Result<i32> {
             },
             origin: &origin,
             engineering,
+            paths,
         };
         println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(0);

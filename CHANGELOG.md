@@ -6,6 +6,11 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ### Agregado
 
+- Contrato consumidor AndMar Context: `status --json` expone `paths`
+  (`project_state`, `patterns` resueltos, sin hardcodear ubicaciones) y el
+  README documenta el flujo uniforme status → contexto mínimo → search
+  dirigido → check. `tests/context.rs` lo fija sobre 4 clases de repo con
+  un único driver sin ramas por origen.
 - `init` autodetecta `version.source` en la raíz (`package.json` →
   `Cargo.toml` → `go.mod` → `pyproject.toml`, como ya hacía en contextos
   anidados), así que proyectos non-JS pasan su gate `version` sin edición

@@ -252,6 +252,24 @@ Antes de explorar el repo en profundidad, leer:
 Preferir `aicontext search` (modos text/structure/impact) y las referencias declaradas antes que el escaneo amplio.
 Antes de declarar completa una implementación, correr: `aicontext check`.
 
+### Consumo machine (capability AndMar Context)
+
+El flujo uniforme para consumidores (sin conocer origen, topología ni
+receta), todo machine-readable bajo `schemas/`:
+
+```text
+status --json   → envelope mínimo (state, origin opaco, subprojects, paths)
+leer paths.*    → PROJECT_STATE.md + PATTERNS.md (contexto mínimo suficiente)
+search --json   → búsqueda dirigida (scope via scan.subprojects[].path)
+check --json    → findings de consistencia (+ error/v1 con remediation)
+```
+
+Reglas: `origin` es informativo, nunca una clave de ruteo; el routing usa
+`scan.subprojects[].path` valga lo que valga su fuente (`engineering`,
+`declared`, `containers`); `state: stale → sync`, `uninitialized → init`;
+`tests/context.rs` fija el contrato sobre monolito/monorepo standalone y
+proyectos Engineering de 1/N surfaces (incluida receta desconocida).
+
 ## Release
 
 Releases con `cargo-dist` (tags SemVer, checksums, instaladores shell/powershell,
