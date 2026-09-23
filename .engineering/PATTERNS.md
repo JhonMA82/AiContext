@@ -138,6 +138,26 @@ Pattern:
 each reviewable unit ships with its tests and docs in a single commit;
 formatting-only changes go in separate `chore` commits.
 
+## Context escalation over provider coupling
+
+Status: preferred
+Confidence: high
+Validated at: c2d5aa9
+
+Reference:
+
+- src/search.rs
+- src/tools.rs
+- src/config.rs
+- README.md
+- skills/aicontext-adopt/SKILL.md
+
+Pattern:
+consumer decides whether more context is required;
+AiContext owns deterministic backend selection;
+graph providers are replaceable;
+successful local/simple tasks bypass graph tooling.
+
 ## Do not copy
 
 - There is no legacy code yet (greenfield); nothing is marked legacy.

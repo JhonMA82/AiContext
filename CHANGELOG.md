@@ -4,6 +4,8 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-22
+
 ### Agregado
 
 - Router de contexto estructural para `aicontext search --impact`: consulta el
