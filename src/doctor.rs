@@ -294,19 +294,39 @@ pub fn run_doctor(root: &Path) -> Vec<Diagnostic> {
         }
     }
 
-    // CodeGraph eligibility for large repos without it.
+    // Graph backend eligibility for large repos. Any usable graph backend
+    // (codebase-memory-mcp preferred, codegraph as fallback) serves impact
+    // queries; without one, impact degrades to text search. Advisory only:
+    // `doctor` never fails or blocks because a graph is missing.
     if let Ok(report) = crate::scan::collect_scan(root) {
         if report.complexity.profile == "large" {
-            if tools::detect_tool("codegraph").available {
-                // healthy: large repo with graph analysis available
-            } else {
+            let cfg = crate::config::RepoConfig::load(root).ok();
+            let usable: Vec<&str> = ["codebase-memory-mcp", "codegraph"]
+                .into_iter()
+                .filter(|tool| {
+                    matches!(
+                        tools::tool_state(cfg.as_ref(), tool),
+                        tools::ToolState::Usable
+                    )
+                })
+                .collect();
+            if usable.is_empty() {
                 out.push(warn(
-                    "codegraph",
+                    "graph backend",
                     format!(
-                        "large repo ({}), codegraph not installed — impact queries degraded",
+                        "large repo ({}), no graph backend — impact queries degraded",
                         report.complexity.reason
                     ),
-                    Some("see `aicontext tools plan`"),
+                    Some("run `aicontext tools plan`"),
+                ));
+            } else {
+                out.push(ok(
+                    "graph backend",
+                    format!(
+                        "large repo ({}): graph backend available ({})",
+                        report.complexity.reason,
+                        usable.join(", ")
+                    ),
                 ));
             }
         }

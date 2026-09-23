@@ -1132,7 +1132,9 @@ pub fn cmd_scan(json: bool) -> Result<i32> {
         println!("Hint: medium/large repo — consider tgrep for text search.");
     }
     if report.complexity.profile == "large" {
-        println!("Hint: large repo — CodeGraph is eligible for impact queries.");
+        println!(
+            "Hint: large repo — graph-assisted impact queries are eligible; see `aicontext tools plan`"
+        );
     }
     let _ = AiError::new("UNUSED", "placeholder", None);
     Ok(0)

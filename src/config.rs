@@ -73,6 +73,11 @@ pub struct ToolsSection {
     pub tgrep: ToolMode,
     #[serde(default)]
     pub codegraph: ToolMode,
+    /// codebase-memory-mcp graph backend (preferred over codegraph when both
+    /// are usable). Key is the Rust identifier; the binary keeps its own
+    /// hyphenated name. No `graph.provider`: backend order is internal policy.
+    #[serde(default)]
+    pub codebase_memory: ToolMode,
     #[serde(default)]
     pub rtk: ToolMode,
 }
@@ -299,6 +304,9 @@ graph = "auto"
 mode = "auto"
 
 [tools.codegraph]
+mode = "auto"
+
+[tools.codebase_memory]
 mode = "auto"
 
 [tools.rtk]

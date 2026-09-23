@@ -89,13 +89,34 @@ aicontext search "<query>" --subproject apps/web [--json]
 
 `--in <path>` restringe tgrep/rg/git grep y ast-grep a un path
 repo-relativo existente (`.` o ausente = repo completo), filtra los hits
-de knowledge por prefijo y, con `--impact`, hace correr CodeGraph desde
-el directorio del scope: si el grafo no puede servir ese directorio
-degrada a resultados de texto con el mismo scope. `--subproject <path>`
+de knowledge por prefijo y, con `--impact`, exige al backend gráfico que
+demuestre el scope: si el grafo no puede servir ese path degrada a
+resultados de texto con el mismo scope, en vez de devolver resultados
+repo-wide etiquetados como scoped. `--subproject <path>`
 es `--in` con validación: el path debe ser uno de los subproyectos
 detectados (si no, error con la lista de candidatos) y la salida es
 idéntica a `--in` más el campo `subproject`. La salida JSON
 (`aicontext/search/v1`) suma `scope` y `subproject` opcionales.
+
+### Impacto con backend gráfico
+
+`aicontext search "<symbol>" --impact` resuelve callers/callees, blast
+radius y relaciones cross-module. Usa el primer backend gráfico
+saludable, en este orden:
+
+1. `codebase-memory-mcp` (preferido),
+2. `codegraph` (fallback),
+3. búsqueda textual (tgrep/rg/git grep) con `note` de degradación.
+
+El campo `backend` de `aicontext/search/v1` identifica al proveedor que
+respondió y `note` explica la degradación; el resto del contrato no cambia
+y el consumidor no necesita conocer a ningún proveedor. Una respuesta
+gráfica válida —incluso vacía— termina la consulta: nunca corren dos
+backends gráficos para una misma búsqueda. Cualquiera de los dos se
+desactiva con `mode = "off"` en `[tools.codebase_memory]` o
+`[tools.codegraph]`.
+
+> AiContext nunca crea índices como side effect de `search`.
 
 ### Estado de adopción
 

@@ -97,6 +97,9 @@ fn method_for(tool: &str) -> Option<Method> {
         "codegraph" => Some(Method::Manual {
             instructions: "download the official engine binary + checksum for your platform into the managed prefix",
         }),
+        "codebase-memory-mcp" => Some(Method::Manual {
+            instructions: crate::tools::CODEBASE_MEMORY_INSTALL,
+        }),
         "knip" => Some(Method::ProjectLocal {
             note: "project-local adapter: add as a devDependency in the repo; AIContext never touches manifests",
         }),

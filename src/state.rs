@@ -500,13 +500,15 @@ pub(crate) fn generated_block(report: &ScanReport) -> String {
             s.push_str("Origin: engineering-platform\n");
             s.push_str("Architecture source: .engineering/project-map.json\n");
             s.push_str("Manifest source: .engineering/project.json\n");
-            if let (Some(recipe), Some(project)) = (eng.recipe.as_ref(), eng.project.as_ref())
-            {
+            if let (Some(recipe), Some(project)) = (eng.recipe.as_ref(), eng.project.as_ref()) {
                 s.push_str(&format!("Recipe: {recipe} (project {project})\n"));
             } else if let Some(recipe) = eng.recipe.as_ref() {
                 s.push_str(&format!("Recipe: {recipe}\n"));
             }
-            s.push_str(&format!("Surfaces: {} (engineering-managed)\n", eng.surfaces));
+            s.push_str(&format!(
+                "Surfaces: {} (engineering-managed)\n",
+                eng.surfaces
+            ));
             if let Some(db) = eng.database_profile.as_ref() {
                 s.push_str(&format!("Database profile: {db}\n"));
             }
@@ -893,7 +895,10 @@ pub fn cmd_init(
     if !manifest_path.exists() {
         let name = repo_name_from_root(&root);
         let source = config::version_source_for(&root);
-        std::fs::write(&manifest_path, config::minimal_toml(&name, &profile, source))?;
+        std::fs::write(
+            &manifest_path,
+            config::minimal_toml(&name, &profile, source),
+        )?;
     }
     // Scan first: PROJECT_STATE and consistency.yml are both seeded from
     // detected facts, so a fresh `init` passes `check` and later drift fails.
@@ -1212,8 +1217,7 @@ pub fn cmd_status(json: bool) -> Result<i32> {
             "Architecture: {} surface(s) via .engineering/project-map.json",
             info.surfaces.len()
         );
-    } else if let crate::engineering::EngineeringDetection::Unsupported { reason, .. } =
-        &detection
+    } else if let crate::engineering::EngineeringDetection::Unsupported { reason, .. } = &detection
     {
         let one_line = reason.split_whitespace().collect::<Vec<_>>().join(" ");
         let clipped: String = one_line.chars().take(160).collect();
@@ -1247,7 +1251,23 @@ pub fn cmd_status(json: bool) -> Result<i32> {
             })
             .unwrap_or("unavailable")
     );
-    println!("  graph: disabled (P3)");
+    // Graph search is routed by `search --impact`: the first healthy graph
+    // backend answers, text as fallback. Reported live; nothing is enabled here.
+    let graph: Vec<&str> = ["codebase-memory-mcp", "codegraph"]
+        .into_iter()
+        .filter(|t| {
+            report
+                .tools
+                .get(*t)
+                .map(|tool| tool.available)
+                .unwrap_or(false)
+        })
+        .collect();
+    if graph.is_empty() {
+        println!("  graph: unavailable (text fallback)");
+    } else {
+        println!("  graph: {} (via `search --impact`)", graph.join(" -> "));
+    }
     println!();
     println!("Last check: {last_check}");
     if state_label == "uninitialized" {

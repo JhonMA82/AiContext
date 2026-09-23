@@ -46,8 +46,10 @@ pub fn command_output(mut cmd: Command, secs: u64) -> Option<Output> {
                 if std::time::Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
-                    let _ = out_thread.join();
-                    let _ = err_thread.join();
+                    // Deliberately not joined: a killed child can leave a
+                    // grandchild holding the pipe, and joining would drag the
+                    // caller past its deadline. The reader threads exit when
+                    // the pipe closes; the caller already has its answer.
                     return None;
                 }
                 std::thread::sleep(Duration::from_millis(25));

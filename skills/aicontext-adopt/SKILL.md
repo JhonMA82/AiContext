@@ -12,15 +12,18 @@ Adopt a repository once so future sessions start from persisted context instead 
 - **Determinism first.** If a fact can be obtained by a command, run the command. Never guess HEAD, version, scripts, workspaces, or tooling.
 - **Persist once.** Expensive conclusions go to `.engineering/` so no session pays for them twice.
 - **Progressive disclosure.** Never start with broad exploration. Expand only when evidence requires it.
+- **Structural need escalates, repo size does not.** When you need callers,
+  callees, blast radius or cross-module relations, run `aicontext search
+  --impact`: AIContext selects its own graph backend and degrades to text by
+  itself. Never pick or name a graph provider.
 
 ```text
-Level 0  aicontext status
-Level 1  .engineering/PROJECT_STATE.md
-Level 2  .engineering/PATTERNS.md
+Level 1  PROJECT_STATE / PATTERNS
+Level 2  declared references / scoped context
 Level 3  aicontext search / tgrep / ast-grep
-Level 4  CodeGraph (large repos only, when installed)
-Level 5  targeted file reads
-Level 6  broad exploration, only if evidence is still missing
+Level 4  graph-assisted lookup through AiContext when structurally justified
+Level 5  targeted source reads
+Level 6  broad exploration only as last resort
 ```
 
 ## Engineering-managed repositories
@@ -41,8 +44,8 @@ you complement it, never re-resolve it.
    contract.
 3. The exploration budget becomes: Engineering contracts → deterministic
    `scan` → only unresolved semantic knowledge → targeted search →
-   CodeGraph/semantics if justified → targeted reads → broad exploration
-   only if still necessary.
+   `aicontext search --impact` if structurally justified → targeted reads →
+   broad exploration only if still necessary.
 4. Persist only new knowledge (patterns, purposes, constraints). Never copy
    `project.json`/`project-map.json`/`provenance.json` into `PROJECT_STATE.md`
    (compact references such as `Origin:`/`Architecture source:`/`Manifest
@@ -61,7 +64,8 @@ you complement it, never re-resolve it.
 5. Find patterns with the cheapest tool that answers the question:
    - `aicontext search <symbol>` (knowledge first, then text).
    - `ast-grep` for structural questions (deprecated APIs, layer violations).
-   - CodeGraph only when `scan` classified the repo as large and it is installed.
+   - `aicontext search --impact` for callers/callees, blast radius or
+     cross-module relations; AIContext picks and degrades its graph backend.
 6. For each candidate pattern, identify 2+ independent references before promoting it. Classify exactly one of:
    - `preferred` — repeated in production code AND backed by docs, an official generator, architecture, or a maintainer. One implementation is never `preferred` on its own.
    - `observed` — repeated but without authoritative backing.
@@ -79,7 +83,7 @@ you complement it, never re-resolve it.
 1. `scan --json`
 2. root docs
 3. `aicontext search` / ast-grep
-4. CodeGraph if applicable
+4. `aicontext search --impact` when structurally justified (callers/callees, blast radius, cross-module)
 5. concrete reference files
 6. broad exploration only if evidence is still missing
 

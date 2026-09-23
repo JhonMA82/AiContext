@@ -4,6 +4,27 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ## [Unreleased]
 
+### Agregado
+
+- Router de contexto estructural para `aicontext search --impact`: consulta el
+  primer backend gráfico saludable en orden `codebase-memory-mcp` →
+  `codegraph` → búsqueda textual, sin correr dos backends tras una respuesta
+  válida (aunque venga vacía) y con `note` describiendo la degradación. El
+  adapter de codebase-memory-mcp es de sólo lectura por CLI (`list_projects`
+  con match exacto de `root_path` canónico, `index_status`,
+  `check_index_coverage`, `search_graph`, `trace_path`), demuestra el scope
+  antes de servirlo y nunca indexa como side effect de `search`. El contrato
+  `aicontext/search/v1` no cambia.
+- Herramienta configurable `[tools.codebase_memory]` (`mode = "auto"`) junto a
+  `[tools.codegraph]`; `mode = "off"` desactiva cada backend sin
+  desinstalarlo. `tools plan` y `tools status` reportan ambos y el catálogo
+  de instalación recomienda codebase-memory-mcp como instalación manual
+  (verificada contra su documentación oficial; AIContext nunca ejecuta
+  `curl | sh` ni instala solo).
+- Presupuesto de tiempo por backend para las consultas de impacto
+  (`AICONTEXT_GRAPH_BUDGET_SECS`, por defecto 120s): un grafo colgado degrada
+  en vez de colgar la búsqueda, sin comerse el tiempo del siguiente backend.
+
 ### Corregido
 
 - Los wrappers remotos pasan al instalador oficial el directorio base

@@ -1,6 +1,12 @@
 use serde::Serialize;
 use std::process::Command;
 
+/// Remediation for codebase-memory-mcp, verified against the current official
+/// docs (DeusData/codebase-memory-mcp): manual install of a release binary +
+/// checksum. The bundled `codebase-memory-mcp install` only wires MCP clients,
+/// and AIContext never runs it — nor `curl | sh`, nor any automatic install.
+pub const CODEBASE_MEMORY_INSTALL: &str = "download the official release binary + checksum from https://github.com/DeusData/codebase-memory-mcp (its `install` subcommand only configures MCP clients and is never run by AIContext)";
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolInfo {
     pub name: String,
@@ -44,10 +50,18 @@ pub fn detect_tool(name: &str) -> ToolInfo {
 }
 
 pub fn detect_core_tools() -> Vec<ToolInfo> {
-    ["git", "ast-grep", "rg", "tgrep", "rtk", "codegraph"]
-        .iter()
-        .map(|n| detect_tool(n))
-        .collect()
+    [
+        "git",
+        "ast-grep",
+        "rg",
+        "tgrep",
+        "rtk",
+        "codebase-memory-mcp",
+        "codegraph",
+    ]
+    .iter()
+    .map(|n| detect_tool(n))
+    .collect()
 }
 
 /// A single recommendation row in `tools plan`.
@@ -99,6 +113,41 @@ fn entry(
     }
 }
 
+/// Where an optional tool stands before it is invoked.
+pub enum ToolState {
+    /// `mode = "off"` in aicontext.toml.
+    Disabled,
+    /// Not installed.
+    Missing,
+    /// Installed and enabled.
+    Usable,
+}
+
+/// State of an optional tool: `mode = "off"` in aicontext.toml disables it
+/// without uninstalling anything, so `auto` keeps it opportunistic.
+pub fn tool_state(cfg: Option<&crate::config::RepoConfig>, tool: &str) -> ToolState {
+    if cfg.map(|c| tool_mode(c, tool) == "off").unwrap_or(false) {
+        return ToolState::Disabled;
+    }
+    if detect_tool(tool).available {
+        ToolState::Usable
+    } else {
+        ToolState::Missing
+    }
+}
+
+/// Per-tool mode from aicontext.toml (default `auto`): `off` disables an
+/// optional tool everywhere it is not required.
+pub fn tool_mode(cfg: &crate::config::RepoConfig, tool: &str) -> String {
+    match tool {
+        "tgrep" => cfg.tools.tgrep.mode.clone(),
+        "codegraph" => cfg.tools.codegraph.mode.clone(),
+        "codebase-memory-mcp" => cfg.tools.codebase_memory.mode.clone(),
+        "rtk" => cfg.tools.rtk.mode.clone(),
+        _ => "auto".to_string(),
+    }
+}
+
 fn is_js_ts(root: &std::path::Path) -> bool {
     root.join("package.json").exists()
 }
@@ -121,12 +170,9 @@ pub(crate) fn build_plan(root: &std::path::Path) -> Vec<PlanSection> {
     let report = crate::scan::collect_scan(root).unwrap_or_else(|_| empty_report(root));
     let cfg = crate::config::RepoConfig::load(root).ok();
     let mode = |name: &str, fallback: &str| -> String {
-        match (cfg.as_ref(), name) {
-            (Some(c), "tgrep") => c.tools.tgrep.mode.clone(),
-            (Some(c), "codegraph") => c.tools.codegraph.mode.clone(),
-            (Some(c), "rtk") => c.tools.rtk.mode.clone(),
-            _ => fallback.to_string(),
-        }
+        cfg.as_ref()
+            .map(|c| tool_mode(c, name))
+            .unwrap_or_else(|| fallback.to_string())
     };
     let off = |name: &str| mode(name, "auto") == "off";
     let profile = report.complexity.profile.as_str();
@@ -168,9 +214,16 @@ pub(crate) fn build_plan(root: &std::path::Path) -> Vec<PlanSection> {
     ));
     if large || report.complexity.workspaces >= 4 {
         recommended.push(entry(
+            "codebase-memory-mcp",
+            "recommended",
+            "large multi-package repo: preferred graph backend for callers/callees and blast radius",
+            Some(CODEBASE_MEMORY_INSTALL),
+            off("codebase-memory-mcp"),
+        ));
+        recommended.push(entry(
             "codegraph",
             "recommended",
-            "large multi-package repo: callers/callees and blast radius without broad reads",
+            "large multi-package repo: callers/callees and blast radius without broad reads (graph fallback)",
             Some("download the official engine binary + checksum for your platform"),
             off("codegraph"),
         ));
