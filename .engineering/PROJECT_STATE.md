@@ -1,11 +1,11 @@
 # Project State
 
 <!-- aicontext:generated:start -->
-Last synchronized commit: dd285e5
-Version: 0.6.0 (Cargo.toml)
+Last synchronized commit: e8f013a
+Version: 0.6.1 (Cargo.toml)
 Package manager: cargo (Cargo.lock)
 Complexity: small
-Source files: 94 | LOC: ~18471
+Source files: 94 | LOC: ~18476
 Test functions: 193 (src: 13, tests: 180)
 
 Important paths:

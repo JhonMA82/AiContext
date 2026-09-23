@@ -4,11 +4,16 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-23
+
 ### Corregido
 
 - Las URLs de instalación remota del `README.md` (sección Release) vuelven a
   apuntar al tag vigente; quedaron en `v0.5.0` al publicar `v0.6.0` porque el
   re-pin sólo alcanzó a `installers/`.
+- El `README.md` indica que `aicontext tools plan` recomienda el backend
+  gráfico donde aplica (instalación manual) y que `tools status` reporta su
+  disponibilidad.
 
 ## [0.6.0] - 2026-09-22
 
