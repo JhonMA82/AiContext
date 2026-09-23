@@ -29,7 +29,7 @@ Removes only $APP-owned state (never foreign files).
   --help        Show this help.
 
 Remote usage:
-  curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.1/installers/uninstall.sh | sh -s -- --managed --yes
+  curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.7.0/installers/uninstall.sh | sh -s -- --managed --yes
 
 Never touched: foreign files, project manifests, .engineering/ dirs.
 USAGE
