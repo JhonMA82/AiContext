@@ -411,7 +411,172 @@ fn detect_versions(root: &Path) -> Vec<VersionCandidate> {
             }
         }
     }
+    // Python candidates follow the same probe order as
+    // `config::version_source_for`, so the declared source always has a
+    // matching candidate here (a projection can then resolve the version).
+    out.extend(detect_python_versions(root));
     out
+}
+
+/// Version candidates for every Python source `version_source_for` may pick,
+/// in probe order: `pyproject.toml`, `setup.cfg`, `setup.py` and finally the
+/// first `version.py` that declares `__version__`.
+fn detect_python_versions(root: &Path) -> Vec<VersionCandidate> {
+    let mut out = Vec::new();
+    for manifest in ["pyproject.toml", "setup.cfg", "setup.py"] {
+        let Ok(text) = std::fs::read_to_string(root.join(manifest)) else {
+            continue;
+        };
+        let version = match manifest {
+            "pyproject.toml" => pyproject_version(&text),
+            "setup.cfg" => setup_cfg_version(&text),
+            _ => quoted_value(&text, "version"),
+        };
+        if let Some(version) = version {
+            out.push(VersionCandidate {
+                source: manifest.to_string(),
+                version,
+            });
+        }
+    }
+    if let Some(rel) = python_version_file(root) {
+        if let Ok(text) = std::fs::read_to_string(root.join(&rel)) {
+            if let Some(version) = quoted_value(&text, "__version__") {
+                out.push(VersionCandidate {
+                    source: rel,
+                    version,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// `version` under `[project]` (PEP 621), then `[tool.poetry]`.
+fn pyproject_version(text: &str) -> Option<String> {
+    let doc = toml::from_str::<toml::Value>(text).ok()?;
+    let paths: &[&[&str]] = &[&["project", "version"], &["tool", "poetry", "version"]];
+    for path in paths {
+        // A missing table skips this path only: a Poetry project has no
+        // `[project]` table and must still reach its own probe.
+        let mut node = Some(&doc);
+        for key in *path {
+            node = node.and_then(|n| n.get(key));
+        }
+        if let Some(version) = node.and_then(|n| n.as_str()) {
+            if version.starts_with(|c: char| c.is_ascii_digit()) {
+                return Some(version.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// `version = x` inside `[metadata]` (distutils/setuptools config).
+fn setup_cfg_version(text: &str) -> Option<String> {
+    let mut in_metadata = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            in_metadata = line == "[metadata]";
+            continue;
+        }
+        if !in_metadata {
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("version") else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let Some(rest) = rest.strip_prefix('=') else {
+            continue;
+        };
+        let value = rest.trim().trim_matches(['"', '\'']);
+        if value.starts_with(|c: char| c.is_ascii_digit()) {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+/// First `key = "value"` (or `'value'`) whose value starts with a digit.
+/// Shared by `setup.py` (`version="1.0"`) and Python modules
+/// (`__version__ = "1.0"`); comments and non-assignment lines never match.
+fn quoted_value(text: &str, key: &str) -> Option<String> {
+    for line in text.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix(key) else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let Some(rest) = rest.strip_prefix('=') else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let Some(quote) = rest.chars().next() else {
+            continue;
+        };
+        if quote != '"' && quote != '\'' {
+            continue;
+        }
+        let rest = &rest[1..];
+        let Some(end) = rest.find(quote) else {
+            continue;
+        };
+        let value = &rest[..end];
+        if !value.is_empty() && value.starts_with(|c: char| c.is_ascii_digit()) {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+/// Repo-relative path of the first Python file declaring `__version__`:
+/// `version.py` at the root, then one directory level down in sorted order.
+/// Python repos that keep no packaging manifest (a bare `requirements.txt`)
+/// still get a version source their `version` gate can resolve. Third-party
+/// and build directories are skipped: their version is not this project's.
+pub(crate) fn python_version_file(root: &Path) -> Option<String> {
+    if declares_python_version(&root.join("version.py")) {
+        return Some("version.py".to_string());
+    }
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(root)
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|entry| entry.path())
+        .filter(|dir| !skipped_python_dir(dir))
+        .collect();
+    dirs.sort();
+    dirs.into_iter().find_map(|dir| {
+        let file = dir.join("version.py");
+        declares_python_version(&file).then(|| {
+            format!(
+                "{}/version.py",
+                dir.file_name().expect("dir has a name").to_string_lossy()
+            )
+        })
+    })
+}
+
+/// Third-party, VCS, hidden and build directories never declare the project
+/// version, so probing them would pick the wrong file.
+fn skipped_python_dir(dir: &Path) -> bool {
+    let name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    name.starts_with('.')
+        || matches!(
+            name.as_str(),
+            "node_modules" | "target" | "vendor" | "build" | "dist" | "__pycache__"
+        )
+}
+
+fn declares_python_version(file: &Path) -> bool {
+    std::fs::read_to_string(file)
+        .map(|text| quoted_value(&text, "__version__").is_some())
+        .unwrap_or(false)
 }
 
 fn detect_docs(root: &Path) -> Vec<String> {

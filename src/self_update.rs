@@ -474,32 +474,38 @@ fn remove_managed_tools(removed: &mut Vec<String>, left_alone: &mut Vec<String>)
 }
 
 fn remove_owned_skills(removed: &mut Vec<String>, left_alone: &mut Vec<String>) -> Result<()> {
-    let dir = home_dir()?
-        .join(".pi")
-        .join("agent")
-        .join("skills")
-        .join("aicontext-adopt");
-    let manifest = dir.join(".aicontext-managed.json");
-    if manifest.exists() {
-        for owned in ["SKILL.md", ".aicontext-managed.json"] {
-            let path = dir.join(owned);
-            if path.exists() {
-                std::fs::remove_file(&path)?;
-                removed.push(format!("owned skill file {}", path.display()));
+    // Every agent this binary can install for; a new agent must be added to
+    // `agent::SUPPORTED_AGENTS`, so the list stays the single source of truth.
+    let mut found = false;
+    for agent in crate::agent::SUPPORTED_AGENTS {
+        let dir = crate::agent::skills_root(agent)?.join("aicontext-adopt");
+        let manifest = dir.join(".aicontext-managed.json");
+        if manifest.exists() {
+            found = true;
+            for owned in ["SKILL.md", ".aicontext-managed.json"] {
+                let path = dir.join(owned);
+                if path.exists() {
+                    std::fs::remove_file(&path)?;
+                    removed.push(format!("owned skill file {}", path.display()));
+                }
             }
+            match std::fs::remove_dir(&dir) {
+                Ok(()) => removed.push(format!("skill dir {}", dir.display())),
+                Err(_) => left_alone.push(format!(
+                    "skill dir {} (foreign files remain; left untouched)",
+                    dir.display()
+                )),
+            }
+        } else if dir.join("SKILL.md").exists() {
+            // Unmanaged install: report, never delete foreign content.
+            found = true;
+            left_alone.push(
+                "skill dir exists without an AIContext ownership manifest; left untouched"
+                    .to_string(),
+            );
         }
-        match std::fs::remove_dir(&dir) {
-            Ok(()) => removed.push(format!("skill dir {}", dir.display())),
-            Err(_) => left_alone.push(format!(
-                "skill dir {} (foreign files remain; left untouched)",
-                dir.display()
-            )),
-        }
-    } else if dir.join("SKILL.md").exists() {
-        left_alone.push(
-            "skill dir exists without an AIContext ownership manifest; left untouched".to_string(),
-        );
-    } else {
+    }
+    if !found {
         left_alone.push("no owned agent skills found".to_string());
     }
     Ok(())

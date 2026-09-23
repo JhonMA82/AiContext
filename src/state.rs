@@ -801,13 +801,15 @@ fn init_nested(root: &Path, sub: &Subproject, profile: &str) -> Result<NestedOut
     // Parent pointer: one `..` per path depth (`apps/web` → `../..`).
     let depth = sub.path.split('/').count();
     let parent_rel = vec![".."; depth].join("/");
+    // Detected version source, shared by the manifest and the consistency
+    // stub so both name the same file.
+    let source = config::version_source_for(&nested);
     let manifest_path = nested.join(REPO_MANIFEST);
     if !manifest_path.exists() {
         let name = repo_name_from_root(&nested);
-        let source = config::version_source_for(&nested);
         std::fs::write(
             &manifest_path,
-            config::minimal_nested_toml(&name, profile, source, &parent_rel),
+            config::minimal_nested_toml(&name, profile, &source, &parent_rel),
         )?;
         seeded += 1;
     }
@@ -842,7 +844,7 @@ fn init_nested(root: &Path, sub: &Subproject, profile: &str) -> Result<NestedOut
     if !consistency_path.exists() {
         std::fs::write(
             &consistency_path,
-            config::minimal_consistency(&report.commands),
+            config::minimal_consistency(&report.commands, &source),
         )?;
         seeded += 1;
     }
@@ -892,12 +894,12 @@ pub fn cmd_init(
     // without hand-editing; with no version file the historical default
     // stays and `check` reports the missing file.
     let manifest_path = root.join(REPO_MANIFEST);
+    let source = config::version_source_for(&root);
     if !manifest_path.exists() {
         let name = repo_name_from_root(&root);
-        let source = config::version_source_for(&root);
         std::fs::write(
             &manifest_path,
-            config::minimal_toml(&name, &profile, source),
+            config::minimal_toml(&name, &profile, &source),
         )?;
     }
     // Scan first: PROJECT_STATE and consistency.yml are both seeded from
@@ -908,7 +910,7 @@ pub fn cmd_init(
     if !consistency_path.exists() {
         std::fs::write(
             &consistency_path,
-            config::minimal_consistency(&report.commands),
+            config::minimal_consistency(&report.commands, &source),
         )?;
     }
     // PATTERNS.md placeholder (semantic content belongs to the skill).

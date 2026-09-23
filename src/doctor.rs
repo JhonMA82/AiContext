@@ -234,29 +234,39 @@ pub fn run_doctor(root: &Path) -> Vec<Diagnostic> {
     // so an on-disk SKILL.md that differs from it is either stale (an
     // older binary installed it) or hand-modified. Both warn with
     // reinstall as remediation; a missing install warns too. The skill is
-    // opt-in, so this diagnostic never fails.
-    match crate::agent::installed_skill() {
-        None => out.push(warn(
-            "skill",
-            "aicontext-adopt is not installed for pi",
-            Some("aicontext agent install pi"),
-        )),
-        Some(installed) if installed.body == crate::agent::SKILL_BODY => out.push(ok(
-            "skill",
-            format!(
-                "aicontext-adopt up to date (v{})",
-                env!("CARGO_PKG_VERSION")
-            ),
-        )),
-        Some(installed) => out.push(warn(
-            "skill",
-            format!(
-                "installed skill differs from this binary (installed: {}, binary: v{})",
-                installed.version.as_deref().unwrap_or("unmanaged"),
-                env!("CARGO_PKG_VERSION")
-            ),
-            Some("aicontext agent install pi"),
-        )),
+    // opt-in, so this diagnostic never fails. One entry per supported
+    // agent: `skill` keeps the historical pi name (JSON consumers look it
+    // up by it), other agents are reported as `skill.<agent>`.
+    for agent in crate::agent::SUPPORTED_AGENTS {
+        let name = if *agent == "pi" {
+            "skill".to_string()
+        } else {
+            format!("skill.{agent}")
+        };
+        let remediation = format!("aicontext agent install {agent}");
+        match crate::agent::installed_skill(agent) {
+            None => out.push(warn(
+                &name,
+                format!("aicontext-adopt is not installed for {agent}"),
+                Some(&remediation),
+            )),
+            Some(installed) if installed.body == crate::agent::SKILL_BODY => out.push(ok(
+                &name,
+                format!(
+                    "aicontext-adopt up to date for {agent} (v{})",
+                    env!("CARGO_PKG_VERSION")
+                ),
+            )),
+            Some(installed) => out.push(warn(
+                &name,
+                format!(
+                    "installed skill differs from this binary for {agent} (installed: {}, binary: v{})",
+                    installed.version.as_deref().unwrap_or("unmanaged"),
+                    env!("CARGO_PKG_VERSION")
+                ),
+                Some(&remediation),
+            )),
+        }
     }
 
     // RTK name-collision trap (§41 example): only meaningful when an `rtk`

@@ -323,16 +323,24 @@ containers = []
 }
 
 /// Version source for a freshly initialized context: the first version file
-/// that exists (npm first, then cargo, Go, Python), falling back to the
-/// historical `package.json` default when none exists (the `version` gate
-/// then reports the missing file instead of guessing).
-pub fn version_source_for(dir: &Path) -> &'static str {
-    for candidate in ["package.json", "Cargo.toml", "go.mod", "pyproject.toml"] {
+/// that exists (npm, Cargo, Go, then the Python manifests), falling back to
+/// the first `version.py` declaring `__version__`, and finally to the
+/// historical `package.json` default when no version file exists (the
+/// `version` gate then reports the missing file instead of guessing).
+pub fn version_source_for(dir: &Path) -> String {
+    for candidate in [
+        "package.json",
+        "Cargo.toml",
+        "go.mod",
+        "pyproject.toml",
+        "setup.cfg",
+        "setup.py",
+    ] {
         if dir.join(candidate).exists() {
-            return candidate;
+            return candidate.to_string();
         }
     }
-    "package.json"
+    crate::scan::python_version_file(dir).unwrap_or_else(|| "package.json".to_string())
 }
 
 /// Nested-context manifest: the minimal manifest with an explicit version
@@ -350,7 +358,7 @@ pub fn minimal_nested_toml(
     out
 }
 
-pub fn minimal_consistency(commands: &[String]) -> String {
+pub fn minimal_consistency(commands: &[String], version_source: &str) -> String {
     let mut sorted = commands.to_vec();
     sorted.sort();
     let documented = if sorted.is_empty() {
@@ -370,7 +378,7 @@ pub fn minimal_consistency(commands: &[String]) -> String {
 # - checks.ast_grep.rules: rule files executed by `check`; a match fails.
 schema: aicontext/consistency/v1
 version:
-  source: package.json
+  source: {version_source}
   projections: []
 commands:
 {documented}protected: []

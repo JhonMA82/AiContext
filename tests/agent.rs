@@ -109,6 +109,85 @@ fn uninstall_without_install_is_noop() {
 fn unknown_agent_fails_closed() {
     let home = fresh_home("unknown");
     let repo = work_dir(&home, false);
-    let (c, _) = run_with_home(&repo, &home, ["agent", "install", "vscode", "--json"]);
+    let (c, out) = run_with_home(&repo, &home, ["agent", "install", "vscode", "--json"]);
     assert_eq!(c, 4, "unsupported agent must exit 4");
+    assert!(
+        out.contains("supported: pi, opencode"),
+        "the error must name the supported agents: {out}"
+    );
+}
+
+#[test]
+fn opencode_install_targets_the_global_skills_dir_and_is_idempotent() {
+    let home = fresh_home("opencode-install");
+    let repo = work_dir(&home, true);
+    let (c1, out1) = run_with_home(&repo, &home, ["agent", "install", "opencode", "--json"]);
+    assert_eq!(c1, 0, "install must succeed: {out1}");
+    let v: serde_json::Value = serde_json::from_str(&out1).expect("must be JSON");
+    assert_eq!(v["schema"], "aicontext/agent/v1");
+    assert_eq!(v["agent"], "opencode");
+    assert_eq!(v["changed"], true);
+
+    let skill = home.join(".config/opencode/skills/aicontext-adopt/SKILL.md");
+    assert!(skill.exists(), "skill must land in the opencode skills dir");
+    let body = std::fs::read_to_string(&skill).unwrap();
+    assert!(body.contains("# aicontext-adopt"));
+    assert!(
+        !home.join(".pi/agent/skills/aicontext-adopt").exists(),
+        "agents must not share a destination"
+    );
+    assert!(
+        v["path"]
+            .as_str()
+            .unwrap_or("")
+            .ends_with("opencode/skills/aicontext-adopt"),
+        "reported path must be the opencode one: {v}"
+    );
+
+    let (c2, out2) = run_with_home(&repo, &home, ["agent", "install", "opencode", "--json"]);
+    assert_eq!(c2, 0);
+    let v2: serde_json::Value = serde_json::from_str(&out2).unwrap();
+    assert_eq!(v2["changed"], false, "second install must be zero diff");
+}
+
+#[test]
+fn opencode_install_honors_xdg_config_home() {
+    let home = fresh_home("opencode-xdg");
+    let xdg = home.join("xdg");
+    let repo = work_dir(&home, false);
+    let out = Command::new(bin())
+        .args(["agent", "install", "opencode", "--json"])
+        .current_dir(&repo)
+        .env("HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg)
+        .output()
+        .expect("run aicontext");
+    assert_eq!(out.status.code(), Some(0));
+    assert!(
+        xdg.join("opencode/skills/aicontext-adopt/SKILL.md")
+            .exists(),
+        "skill must follow XDG_CONFIG_HOME"
+    );
+    assert!(
+        !home.join(".config/opencode").exists(),
+        "the fallback dir must not be used when XDG_CONFIG_HOME is absolute"
+    );
+}
+
+#[test]
+fn opencode_uninstall_removes_only_managed_files() {
+    let home = fresh_home("opencode-uninstall");
+    let repo = work_dir(&home, false);
+    let (c, _) = run_with_home(&repo, &home, ["agent", "install", "opencode"]);
+    assert_eq!(c, 0);
+    let skill = home.join(".config/opencode/skills/aicontext-adopt");
+    let foreign = skill.join("notes.txt");
+    std::fs::write(&foreign, "mine").unwrap();
+
+    let (cu, out) = run_with_home(&repo, &home, ["agent", "uninstall", "opencode", "--json"]);
+    assert_eq!(cu, 0, "uninstall must succeed: {out}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["agent"], "opencode");
+    assert!(!skill.join("SKILL.md").exists(), "owned file must go");
+    assert!(foreign.exists(), "foreign files must survive uninstall");
 }

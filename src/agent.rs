@@ -6,6 +6,11 @@ const SKILL_NAME: &str = "aicontext-adopt";
 pub(crate) const SKILL_BODY: &str = include_str!("../skills/aicontext-adopt/SKILL.md");
 const MANAGED_MANIFEST: &str = ".aicontext-managed.json";
 
+/// Agents this binary installs the skill for, in the order `doctor` reports
+/// them. `pi` keeps its historical tree; `opencode` follows the global
+/// skills directory it documents for discovery.
+pub const SUPPORTED_AGENTS: &[&str] = &["pi", "opencode"];
+
 /// Legacy, unmarked AGENTS.md pointer appended by `agent install`. The
 /// marked context block in `state.rs` wraps exactly this body, and the
 /// router must report — never rewrite — a file that already contains it.
@@ -27,22 +32,59 @@ fn home_dir() -> Result<PathBuf> {
         .context("neither HOME nor USERPROFILE is set")
 }
 
-fn skills_dir() -> Result<PathBuf> {
-    Ok(home_dir()?.join(".pi").join("agent").join("skills"))
+/// Base config directory: OpenCode resolves `$XDG_CONFIG_HOME` when it is
+/// set to an absolute path, so the skill must land where it actually looks.
+fn config_home() -> Result<PathBuf> {
+    match std::env::var("XDG_CONFIG_HOME") {
+        Ok(xdg) if !xdg.is_empty() && PathBuf::from(&xdg).is_absolute() => Ok(PathBuf::from(xdg)),
+        _ => Ok(home_dir()?.join(".config")),
+    }
+}
+
+/// Skills root for one agent. `opencode` uses its documented global skills
+/// directory; unknown agents fail closed (never guess a destination).
+pub(crate) fn skills_root(agent: &str) -> Result<PathBuf> {
+    match agent {
+        "pi" => Ok(home_dir()?.join(".pi").join("agent").join("skills")),
+        "opencode" => Ok(config_home()?.join("opencode").join("skills")),
+        other => Err(crate::output::AiError::new(
+            "UNSUPPORTED_AGENT",
+            unsupported_agent_message(other),
+            None,
+        )
+        .into()),
+    }
+}
+
+/// Display name for prose output.
+fn agent_label(agent: &str) -> &'static str {
+    match agent {
+        "pi" => "Pi",
+        "opencode" => "OpenCode",
+        _ => "agent",
+    }
+}
+
+fn unsupported_agent_message(agent: &str) -> String {
+    format!(
+        "agent '{agent}' is not supported (supported: {})",
+        SUPPORTED_AGENTS.join(", ")
+    )
 }
 
 /// Installed skill state for the doctor skew gate: the on-disk `SKILL.md`
 /// body plus the managing binary version from the ownership manifest
 /// (`None` when the install is unmanaged). A missing file or directory
 /// reads as `None` (not installed), never an error.
+#[derive(Debug)]
 pub(crate) struct InstalledSkill {
     pub body: String,
     pub version: Option<String>,
 }
 
-pub(crate) fn installed_skill() -> Option<InstalledSkill> {
-    let body = std::fs::read_to_string(skill_dir().ok()?.join("SKILL.md")).ok()?;
-    let version = skill_dir()
+pub(crate) fn installed_skill(agent: &str) -> Option<InstalledSkill> {
+    let body = std::fs::read_to_string(skill_dir(agent).ok()?.join("SKILL.md")).ok()?;
+    let version = skill_dir(agent)
         .ok()
         .and_then(|dir| std::fs::read_to_string(dir.join(MANAGED_MANIFEST)).ok())
         .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
@@ -54,8 +96,8 @@ pub(crate) fn installed_skill() -> Option<InstalledSkill> {
     Some(InstalledSkill { body, version })
 }
 
-fn skill_dir() -> Result<PathBuf> {
-    Ok(skills_dir()?.join(SKILL_NAME))
+fn skill_dir(agent: &str) -> Result<PathBuf> {
+    Ok(skills_root(agent)?.join(SKILL_NAME))
 }
 
 #[derive(Serialize)]
@@ -101,15 +143,13 @@ fn ensure_agents_pointer(repo: &std::path::Path) -> Result<(bool, String)> {
 }
 
 fn check_agent(agent: &str) -> Result<()> {
-    if agent == "pi" {
+    if SUPPORTED_AGENTS.contains(&agent) {
         return Ok(());
     }
-    Err(crate::output::AiError::new(
-        "UNSUPPORTED_AGENT",
-        format!("agent '{agent}' is not supported in v0.1 (supported: pi)"),
-        None,
+    Err(
+        crate::output::AiError::new("UNSUPPORTED_AGENT", unsupported_agent_message(agent), None)
+            .into(),
     )
-    .into())
 }
 
 pub fn cmd_install(agent: String, json: bool) -> Result<i32> {
@@ -121,7 +161,7 @@ pub fn cmd_install(agent: String, json: bool) -> Result<i32> {
         }
         return Ok(4);
     }
-    let dir = skill_dir()?;
+    let dir = skill_dir(&agent)?;
     let skill_path = dir.join("SKILL.md");
     let manifest_path = dir.join(MANAGED_MANIFEST);
     let skill_changed = write_if_different(&skill_path, SKILL_BODY)?;
@@ -160,7 +200,11 @@ pub fn cmd_install(agent: String, json: bool) -> Result<i32> {
         );
         return Ok(0);
     }
-    println!("Installed skill `{SKILL_NAME}` for Pi at {}", dir.display());
+    println!(
+        "Installed skill `{SKILL_NAME}` for {} at {}",
+        agent_label(&agent),
+        dir.display()
+    );
     println!("Invoke manually with /{SKILL_NAME}. It never auto-runs.");
     println!("Note: {pointer_note}");
     if !changed {
@@ -178,7 +222,7 @@ pub fn cmd_uninstall(agent: String, json: bool) -> Result<i32> {
         }
         return Ok(4);
     }
-    let dir = skill_dir()?;
+    let dir = skill_dir(&agent)?;
     let manifest_path = dir.join(MANAGED_MANIFEST);
     let mut removed: Vec<String> = Vec::new();
     let mut note = String::from("nothing to remove");

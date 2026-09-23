@@ -345,3 +345,115 @@ fn init_detects_cargo_version_source_at_root() {
         Some(true)
     );
 }
+
+#[test]
+fn init_detects_python_versionpy_source_without_packaging_manifest() {
+    // A Python repo with only requirements.txt: no pyproject/setup.cfg, so
+    // the version lives in a module. Both manifests must name that file.
+    let dir = synth_repo(
+        "python-versionpy",
+        &[
+            ("requirements.txt", "requests==2.31.0\n"),
+            ("main.py", "from core.version import __version__\n"),
+            (
+                "core/version.py",
+                "'''Single source of truth.'''\n__version__ = \"0.4.9\"\n",
+            ),
+        ],
+    );
+    let (c, out) = run(&dir, ["init", "--non-interactive"]);
+    assert_eq!(c, 0, "fresh init must pass check: {out}");
+
+    let manifest = std::fs::read_to_string(dir.join(".engineering/aicontext.toml")).unwrap();
+    assert!(
+        manifest.contains("source = \"core/version.py\""),
+        "root manifest must carry the detected source:\n{manifest}"
+    );
+    let yml = std::fs::read_to_string(dir.join(".engineering/consistency.yml")).unwrap();
+    assert!(
+        yml.contains("source: core/version.py"),
+        "consistency stub must name the same source:\n{yml}"
+    );
+
+    // The projection resolves the version from that source, so `version`
+    // and `consistency` both pass on a Python-only root.
+    std::fs::write(dir.join("VERSION.md"), "# Version\n\n0.4.9\n").unwrap();
+    set_projections(&dir, "projections:\n      - VERSION.md");
+    let (code, out) = run(&dir, ["check", "--json"]);
+    assert_eq!(code, 0, "python-only root must pass check: {out}");
+    assert_eq!(
+        finding(&out, "version")
+            .get("passed")
+            .and_then(|p| p.as_bool()),
+        Some(true),
+        "{out}"
+    );
+    let f = finding(&out, "consistency");
+    assert_eq!(f.get("passed").and_then(|p| p.as_bool()), Some(true), "{f}");
+    assert!(
+        f.get("detail")
+            .and_then(|d| d.as_str())
+            .unwrap_or("")
+            .contains("0.4.9"),
+        "projection must carry the resolved version: {f}"
+    );
+}
+
+#[test]
+fn init_detects_pyproject_source_and_resolves_projections() {
+    let dir = synth_repo(
+        "python-pyproject",
+        &[(
+            "pyproject.toml",
+            "[project]\nname = \"demo\"\nversion = \"1.2.3\"\n",
+        )],
+    );
+    let (c, out) = run(&dir, ["init", "--non-interactive"]);
+    assert_eq!(c, 0, "fresh init must pass check: {out}");
+    let manifest = std::fs::read_to_string(dir.join(".engineering/aicontext.toml")).unwrap();
+    assert!(
+        manifest.contains("source = \"pyproject.toml\""),
+        "root manifest must carry the detected source:\n{manifest}"
+    );
+
+    std::fs::write(dir.join("VERSION.txt"), "1.2.3\n").unwrap();
+    set_projections(&dir, "projections:\n      - VERSION.txt");
+    let (code, out) = run(&dir, ["check", "--json"]);
+    assert_eq!(code, 0, "pyproject root must pass check: {out}");
+    let f = finding(&out, "consistency");
+    assert!(
+        f.get("detail")
+            .and_then(|d| d.as_str())
+            .unwrap_or("")
+            .contains("1.2.3"),
+        "pyproject version must resolve: {f}"
+    );
+}
+
+#[test]
+fn poetry_pyproject_resolves_when_the_project_table_is_absent() {
+    // A Poetry project has no `[project]` table: the probe must fall
+    // through to `[tool.poetry]` instead of giving up on the file.
+    let dir = synth_repo(
+        "python-poetry",
+        &[(
+            "pyproject.toml",
+            "[tool.poetry]\nname = \"demo\"\nversion = \"7.7.7\"\n",
+        )],
+    );
+    let (c, out) = run(&dir, ["init", "--non-interactive"]);
+    assert_eq!(c, 0, "fresh init must pass check: {out}");
+
+    std::fs::write(dir.join("VERSION.txt"), "7.7.7\n").unwrap();
+    set_projections(&dir, "projections:\n      - VERSION.txt");
+    let (code, out) = run(&dir, ["check", "--json"]);
+    assert_eq!(code, 0, "poetry root must pass check: {out}");
+    let f = finding(&out, "consistency");
+    assert!(
+        f.get("detail")
+            .and_then(|d| d.as_str())
+            .unwrap_or("")
+            .contains("7.7.7"),
+        "poetry version must resolve: {f}"
+    );
+}

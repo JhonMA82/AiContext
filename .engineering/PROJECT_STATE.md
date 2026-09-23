@@ -1,12 +1,12 @@
 # Project State
 
 <!-- aicontext:generated:start -->
-Last synchronized commit: e8f013a
+Last synchronized commit: 9ea4f9c
 Version: 0.6.1 (Cargo.toml)
 Package manager: cargo (Cargo.lock)
 Complexity: small
-Source files: 94 | LOC: ~18476
-Test functions: 193 (src: 13, tests: 180)
+Source files: 94 | LOC: ~19044
+Test functions: 200 (src: 13, tests: 187)
 
 Important paths:
 
@@ -25,8 +25,8 @@ skill for agents. It replaces repetitive exploration, never the development work
 
 ## Current capabilities
 
-- CLI: init, scan, sync, status, check, doctor, search, tools plan/status/install/update/uninstall, agent install/uninstall pi, completion
-- Skill `aicontext-adopt` (embedded in the binary, installed per agent)
+- CLI: init, scan, sync, status, check, doctor, search, tools plan/status/install/update/uninstall, agent install/uninstall pi|opencode, completion
+- Skill `aicontext-adopt` (embedded in the binary, installed per agent: pi, opencode)
 - Versioned JSON contracts in `schemas/`; error envelope with remediation
 - Integration tests per command plus unit tests; exact test-function counts are a scanned fact in the generated block
 

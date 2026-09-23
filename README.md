@@ -72,13 +72,31 @@ toplevel como antes.
 
 ### Adopción con scope (skill + `doctor`)
 
+```bash
+aicontext agent install <pi|opencode> [--json]
+aicontext agent uninstall <pi|opencode> [--json]
+```
+
 El skill `aicontext-adopt` adopta un monorepo en una corrida sobre todos
 los detectados, en orden fijo por path y por slices reanudables: un commit
 por subproyecto, presupuesto por scope con salida legal a `pending` y
 summary final (adoptados con su propósito, pendientes con lo que les
-falta). `doctor` suma el diagnóstico `skill`: compara el `SKILL.md`
-instalado con el embebido en el binario (ausente, al día, stale con ambas
-versiones, unmanaged) y siempre es advisory — el skew nunca falla.
+falta).
+
+Cada agente recibe el skill en su propio directorio: `pi` en
+`~/.pi/agent/skills/aicontext-adopt`, `opencode` en el directorio global
+de skills que OpenCode descubre (`$XDG_CONFIG_HOME/opencode/skills`, por
+defecto `~/.config/opencode/skills`). Ambas instalaciones llevan el
+manifiesto de ownership `.aicontext-managed.json`, así que `agent
+uninstall` y `self uninstall` retiran solo lo propio — los archivos ajenos
+sobreviven — y el puntero de `AGENTS.md` se agrega una sola vez. Un agente
+distinto de los soportados falla cerrado (exit 4) sin tocar nada.
+
+`doctor` suma un diagnóstico por agente: compara el `SKILL.md` instalado
+con el embebido en el binario (ausente, al día, stale con ambas
+versiones, unmanaged) y siempre es advisory — el skew nunca falla. El
+nombre `skill` sigue siendo el diagnóstico de `pi` (los consumidores JSON
+lo buscan así) y el resto se reporta como `skill.<agente>`.
 
 ### Búsqueda con scope
 
@@ -209,7 +227,12 @@ contra la realidad (no solo schema):
   el scan.
 - `version.projections`: cada archivo listado debe contener literalmente
   la versión resuelta desde `version.source` (`init` lo detecta:
-  `package.json` → `Cargo.toml` → `go.mod` → `pyproject.toml`).
+  `package.json` → `Cargo.toml` → `go.mod` → `pyproject.toml` →
+  `setup.cfg` → `setup.py`; sin manifest de packaging, el primer
+  `version.py` que declara `__version__`, en la raíz y luego un
+  subdirectorio de nivel 1). El mismo orden alimenta los
+  `version_candidates` del scan, así que la fuente declarada siempre
+  resuelve.
 - `protected`: cada path listado debe existir.
 - `checks.ast_grep.rules`: cada regla `*.yml` del directorio se ejecuta
   con `ast-grep scan --rule --json`; cualquier match es violación. Sin

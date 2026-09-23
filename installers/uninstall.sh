@@ -132,20 +132,31 @@ remove_managed_tools() {
 }
 
 remove_owned_skill() {
-  skill_dir="$HOME/.pi/agent/skills/aicontext-adopt"
-  manifest="$skill_dir/.aicontext-managed.json"
-  if [ -f "$manifest" ]; then
-    rm -f "$skill_dir/SKILL.md" "$manifest"
-    log "removed owned skill file $skill_dir/SKILL.md"
-    log "removed ownership manifest $manifest"
-    if rmdir "$skill_dir" 2>/dev/null; then
-      log "removed skill dir $skill_dir"
-    else
-      log "left alone: skill dir $skill_dir (foreign files remain; left untouched)"
+  # Same agent list as `agent::SUPPORTED_AGENTS`: pi keeps its historical
+  # tree, opencode follows its documented global skills directory.
+  skill_found=0
+  while IFS= read -r skill_dir; do
+    [ -n "$skill_dir" ] || continue
+    manifest="$skill_dir/.aicontext-managed.json"
+    if [ -f "$manifest" ]; then
+      skill_found=1
+      rm -f "$skill_dir/SKILL.md" "$manifest"
+      log "removed owned skill file $skill_dir/SKILL.md"
+      log "removed ownership manifest $manifest"
+      if rmdir "$skill_dir" 2>/dev/null; then
+        log "removed skill dir $skill_dir"
+      else
+        log "left alone: skill dir $skill_dir (foreign files remain; left untouched)"
+      fi
+    elif [ -f "$skill_dir/SKILL.md" ]; then
+      skill_found=1
+      log "left alone: skill dir exists without an AIContext ownership manifest; left untouched"
     fi
-  elif [ -f "$skill_dir/SKILL.md" ]; then
-    log "left alone: skill dir exists without an AIContext ownership manifest; left untouched"
-  else
+  done <<EOF
+$HOME/.pi/agent/skills/aicontext-adopt
+${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills/aicontext-adopt
+EOF
+  if [ "$skill_found" -eq 0 ]; then
     log "left alone: no owned agent skills found"
   fi
 }

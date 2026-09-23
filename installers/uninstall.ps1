@@ -94,26 +94,38 @@ if (-not $Managed) {
   Write-Output "removed ownership registry at $registry"
 }
 
-# 3. Owned agent skill (manifest-gated, like self_update.rs).
-$skillDir = Join-Path $env:USERPROFILE ".pi\agent\skills\aicontext-adopt"
-$manifest = Join-Path $skillDir ".aicontext-managed.json"
-if (Test-Path $manifest) {
-  Remove-Item -Force (Join-Path $skillDir "SKILL.md") -ErrorAction SilentlyContinue
-  Remove-Item -Force $manifest -ErrorAction SilentlyContinue
-  Write-Output "removed owned skill files in $skillDir"
-  try {
-    if ((Get-ChildItem $skillDir -Force -ErrorAction Stop | Measure-Object).Count -eq 0) {
-      Remove-Item -Force $skillDir
-      Write-Output "removed skill dir $skillDir"
-    } else {
+# 3. Owned agent skills (manifest-gated, like self_update.rs). Same agent
+#    list as `agent::SUPPORTED_AGENTS`: pi keeps its historical tree,
+#    opencode follows its documented global skills directory.
+$configHome = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $env:USERPROFILE ".config" }
+$skillDirs = @(
+  (Join-Path $env:USERPROFILE ".pi\agent\skills\aicontext-adopt"),
+  (Join-Path $configHome "opencode\skills\aicontext-adopt")
+)
+$skillFound = $false
+foreach ($skillDir in $skillDirs) {
+  $manifest = Join-Path $skillDir ".aicontext-managed.json"
+  if (Test-Path $manifest) {
+    $skillFound = $true
+    Remove-Item -Force (Join-Path $skillDir "SKILL.md") -ErrorAction SilentlyContinue
+    Remove-Item -Force $manifest -ErrorAction SilentlyContinue
+    Write-Output "removed owned skill files in $skillDir"
+    try {
+      if ((Get-ChildItem $skillDir -Force -ErrorAction Stop | Measure-Object).Count -eq 0) {
+        Remove-Item -Force $skillDir
+        Write-Output "removed skill dir $skillDir"
+      } else {
+        Write-Output "left alone: skill dir $skillDir (foreign files remain; left untouched)"
+      }
+    } catch {
       Write-Output "left alone: skill dir $skillDir (foreign files remain; left untouched)"
     }
-  } catch {
-    Write-Output "left alone: skill dir $skillDir (foreign files remain; left untouched)"
+  } elseif (Test-Path (Join-Path $skillDir "SKILL.md")) {
+    $skillFound = $true
+    Write-Output "left alone: skill dir exists without an AIContext ownership manifest; left untouched"
   }
-} elseif (Test-Path (Join-Path $skillDir "SKILL.md")) {
-  Write-Output "left alone: skill dir exists without an AIContext ownership manifest; left untouched"
-} else {
+}
+if (-not $skillFound) {
   Write-Output "left alone: no owned agent skills found"
 }
 

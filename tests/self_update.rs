@@ -176,6 +176,13 @@ fn self_update_uninstall_managed_removes_only_owned_state() {
     std::fs::write(skill_dir.join(".aicontext-managed.json"), "{}").expect("write manifest");
     std::fs::write(skill_dir.join("keep.me"), "foreign").expect("write foreign skill file");
 
+    // The same ownership claim in the opencode skills dir. Nothing foreign
+    // lives there, so the whole dir must be removed with its files.
+    let oc_skill_dir = home.join(".config/opencode/skills/aicontext-adopt");
+    std::fs::create_dir_all(&oc_skill_dir).expect("mkdir opencode skill");
+    std::fs::write(oc_skill_dir.join("SKILL.md"), "owned skill").expect("write skill");
+    std::fs::write(oc_skill_dir.join(".aicontext-managed.json"), "{}").expect("write manifest");
+
     // Project files that uninstall must never touch.
     std::fs::create_dir_all(work.join(".engineering")).expect("mkdir engineering");
     std::fs::write(work.join(".engineering/sentinel"), "keep").expect("write sentinel");
@@ -204,11 +211,23 @@ fn self_update_uninstall_managed_removes_only_owned_state() {
             skill_dir.join(".aicontext-managed.json"),
             "ownership manifest must be removed",
         ),
+        (
+            oc_skill_dir.join("SKILL.md"),
+            "owned opencode skill must be removed",
+        ),
+        (
+            oc_skill_dir.join(".aicontext-managed.json"),
+            "opencode ownership manifest must be removed",
+        ),
     ] {
         if path.exists() {
             panic!("{what}: {}", path.display());
         }
     }
+    assert!(
+        !oc_skill_dir.exists(),
+        "an opencode skill dir with no foreign files must be removed entirely"
+    );
 
     // Everything foreign is left alone.
     assert!(

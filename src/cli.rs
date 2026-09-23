@@ -175,14 +175,14 @@ pub enum SelfCommand {
 pub enum AgentCommand {
     /// Install the aicontext-adopt skill plus the minimal AGENTS.md pointer
     Install {
-        /// Target agent (v0.1: pi)
+        /// Target agent (pi | opencode)
         agent: String,
         #[arg(long, default_value_t = false)]
         json: bool,
     },
     /// Remove only files owned by AIContext (never foreign files)
     Uninstall {
-        /// Target agent (v0.1: pi)
+        /// Target agent (pi | opencode)
         agent: String,
         #[arg(long, default_value_t = false)]
         json: bool,

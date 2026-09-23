@@ -4,6 +4,34 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ## [Unreleased]
 
+### Agregado
+
+- Soporte de agente `opencode` en `aicontext agent install|uninstall`: el
+  skill `aicontext-adopt` se instala en el directorio global de skills que
+  OpenCode descubre (`$XDG_CONFIG_HOME/opencode/skills`, por defecto
+  `~/.config/opencode/skills`) con el mismo manifiesto de ownership
+  `.aicontext-managed.json` que `pi`, idempotente y con el puntero de
+  `AGENTS.md` sin duplicar. Un agente no soportado sigue fallando cerrado
+  con exit 4, ahora nombrando la lista completa. `doctor` reporta un
+  diagnóstico por agente (`skill` sigue siendo el de `pi` para los
+  consumidores existentes; el resto como `skill.<agente>`) y `self
+  uninstall` más `installers/uninstall.sh`/`.ps1` retiran los archivos
+  propios de ambos directorios sin tocar ajenos.
+- `init` detecta fuentes de versión Python: además de `package.json`,
+  `Cargo.toml`, `go.mod` y `pyproject.toml` prueba `setup.cfg` y
+  `setup.py`, y sin manifest de packaging toma el primer `version.py` que
+  declara `__version__` (raíz, luego un subdirectorio de nivel 1, saltando
+  `vendor`/`target`/`node_modules`/ocultos). `scan` resuelve candidates
+  desde esas mismas fuentes, así que `version.projections` funciona en
+  repos Python y su gate `version` deja de caer al default histórico
+  `package.json`.
+
+### Corregido
+
+- `.engineering/consistency.yml` siembra `version.source` con la fuente
+  detectada en vez del default `package.json`, para que los dos manifiestos
+  nombren el mismo archivo.
+
 ## [0.6.1] - 2026-09-23
 
 ### Corregido

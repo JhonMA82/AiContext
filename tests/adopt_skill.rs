@@ -100,6 +100,21 @@ fn skill_diagnostic(dir: &Path, home: &Path) -> (i32, serde_json::Value) {
     (code, found)
 }
 
+/// Any diagnostic of `doctor --json`, by exact name.
+fn diagnostic_named(dir: &Path, home: &Path, name: &str) -> (i32, serde_json::Value) {
+    let (code, out) = run_with_home(dir, home, ["doctor", "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&out)
+        .unwrap_or_else(|e| panic!("doctor --json must be JSON ({e}): {out}"));
+    let found = v["diagnostics"]
+        .as_array()
+        .expect("diagnostics must be an array")
+        .iter()
+        .find(|d| d["name"] == name)
+        .unwrap_or_else(|| panic!("diagnostic {name} must exist: {v:?}"))
+        .clone();
+    (code, found)
+}
+
 #[test]
 fn installed_skill_documents_the_monorepo_scope() {
     let home = fresh_home("scope");
@@ -241,4 +256,60 @@ fn skew_warnings_never_fail_doctor() {
         let v: serde_json::Value = serde_json::from_str(&out).expect("JSON");
         assert_eq!(v["healthy"], true, "{tag}");
     }
+}
+
+#[test]
+fn doctor_reports_the_opencode_skill_as_its_own_diagnostic() {
+    let home = fresh_home("skill-opencode");
+    let dir = fixture_repo("node-single");
+    let (c, _) = run_with_home(&dir, &home, ["init", "--non-interactive"]);
+    assert_eq!(c, 0);
+
+    // Nothing installed: both agents report a warn with their own remediation.
+    let (code, pi) = skill_diagnostic(&dir, &home);
+    assert_eq!(code, 0, "a missing skill must never fail doctor");
+    assert_eq!(pi["status"], "warn");
+    assert!(
+        pi["remediation"]
+            .as_str()
+            .unwrap_or("")
+            .contains("agent install pi"),
+        "{pi:?}"
+    );
+    let (code2, oc) = diagnostic_named(&dir, &home, "skill.opencode");
+    assert_eq!(code2, 0);
+    assert_eq!(oc["status"], "warn");
+    assert!(
+        oc["detail"]
+            .as_str()
+            .unwrap_or("")
+            .contains("not installed for opencode"),
+        "{oc:?}"
+    );
+    assert!(
+        oc["remediation"]
+            .as_str()
+            .unwrap_or("")
+            .contains("agent install opencode"),
+        "{oc:?}"
+    );
+
+    // Installing for opencode flips only that entry; pi stays a warn.
+    let (ic, iout) = run_with_home(&dir, &home, ["agent", "install", "opencode"]);
+    assert_eq!(ic, 0, "{iout}");
+    let (_, oc2) = diagnostic_named(&dir, &home, "skill.opencode");
+    assert_eq!(oc2["status"], "ok", "{oc2:?}");
+    assert!(
+        oc2["detail"]
+            .as_str()
+            .unwrap_or("")
+            .contains("up to date for opencode"),
+        "{oc2:?}"
+    );
+    let (_, pi2) = skill_diagnostic(&dir, &home);
+    assert_eq!(pi2["status"], "warn", "pi must stay independent: {pi2:?}");
+
+    // Still green: every skill state is a warning, never a failure.
+    let (dc, dout) = run_with_home(&dir, &home, ["doctor", "--json"]);
+    assert_eq!(dc, 0, "doctor must stay green: {dout}");
 }
