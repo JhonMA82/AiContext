@@ -4,6 +4,12 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ## [Unreleased]
 
+### Corregido
+
+- Las URLs de instalación remota del `README.md` (sección Release) vuelven a
+  apuntar al tag vigente; quedaron en `v0.5.0` al publicar `v0.6.0` porque el
+  re-pin sólo alcanzó a `installers/`.
+
 ## [0.6.0] - 2026-09-22
 
 ### Agregado

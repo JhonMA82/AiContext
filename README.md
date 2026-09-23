@@ -114,7 +114,9 @@ y el consumidor no necesita conocer a ningún proveedor. Una respuesta
 gráfica válida —incluso vacía— termina la consulta: nunca corren dos
 backends gráficos para una misma búsqueda. Cualquiera de los dos se
 desactiva con `mode = "off"` en `[tools.codebase_memory]` o
-`[tools.codegraph]`.
+`[tools.codegraph]`. `aicontext tools plan` recomienda el backend cuando
+aplica (instalación manual, nunca automática); `tools status` reporta si
+está disponible.
 
 > AiContext nunca crea índices como side effect de `search`.
 
@@ -321,10 +323,10 @@ Instalación/actualización/desinstalación remota versionada
 `--version`, `--check`, `--managed --yes`):
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.5.0/installers/install.sh | sh
-curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.5.0/installers/update.sh | sh -s -- --check
-curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.5.0/installers/update.sh | sh -s -- --yes
-curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.5.0/installers/uninstall.sh | sh -s -- --managed --yes
+curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.0/installers/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.0/installers/update.sh | sh -s -- --check
+curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.0/installers/update.sh | sh -s -- --yes
+curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.0/installers/uninstall.sh | sh -s -- --managed --yes
 ```
 
 Windows (PowerShell): `installers/install.ps1`, `update.ps1 -Check` /
