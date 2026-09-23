@@ -20,19 +20,19 @@ scripts pasan al instalador oficial el directorio base y este añade
 Unix (última versión):
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.0/installers/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.1/installers/install.sh | sh
 ```
 
 Unix (versión fijada):
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.0/installers/install.sh | sh -s -- --version 0.4.0
+curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.1/installers/install.sh | sh -s -- --version 0.4.0
 ```
 
 Windows:
 
 ```powershell
-irm https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.0/installers/install.ps1 | iex
+irm https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.1/installers/install.ps1 | iex
 ```
 
 Origen primario: el instalador oficial de cargo-dist publicado en GitHub
@@ -50,8 +50,8 @@ Flags comunes (`.sh`): `--version latest|0.4.0|v0.4.0`, `--prefix DIR`,
 ## Actualización remota
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.0/installers/update.sh | sh -s -- --check
-curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.0/installers/update.sh | sh -s -- --yes
+curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.1/installers/update.sh | sh -s -- --check
+curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.1/installers/update.sh | sh -s -- --yes
 ```
 
 - `--check` es solo lectura (delega en `aicontext self update --check`
@@ -66,7 +66,7 @@ Windows: `update.ps1` con `-Check` / `-Yes` (`-Version`, `-InstallDir`,
 
 ## Desinstalación remota
 ```sh
-curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.0/installers/uninstall.sh | sh -s -- --managed --yes
+curl -LsSf https://raw.githubusercontent.com/JhonMA82/AiContext/v0.6.1/installers/uninstall.sh | sh -s -- --managed --yes
 ```
 
 - Requiere `--yes` (exit 2 sin él).

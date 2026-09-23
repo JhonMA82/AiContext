@@ -19,7 +19,7 @@ function Show-Usage {
   Write-Output "  -Check   Compare versions only; never change anything."
   Write-Output "  -Yes     Required to actually update (refused without it)."
   Write-Output "Remote usage:"
-  Write-Output "  irm https://raw.githubusercontent.com/$Repo/v0.6.0/installers/update.ps1 | iex"
+  Write-Output "  irm https://raw.githubusercontent.com/$Repo/v0.6.1/installers/update.ps1 | iex"
 }
 
 if ($Help) { Show-Usage; exit 0 }

@@ -32,8 +32,8 @@ Installs $APP remotely (idempotent, safe to re-run).
   --help              Show this help.
 
 Remote usage:
-  curl -LsSf https://raw.githubusercontent.com/$REPO/v0.6.0/installers/install.sh | sh
-  curl -LsSf https://raw.githubusercontent.com/$REPO/v0.6.0/installers/install.sh | sh -s -- --version 0.4.0
+  curl -LsSf https://raw.githubusercontent.com/$REPO/v0.6.1/installers/install.sh | sh
+  curl -LsSf https://raw.githubusercontent.com/$REPO/v0.6.1/installers/install.sh | sh -s -- --version 0.4.0
 
 Env overrides: AICONTEXT_PREFIX, AICONTEXT_INSTALL_DIR.
 USAGE
