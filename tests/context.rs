@@ -127,16 +127,35 @@ fn consumer_flow(dir: &Path, token: &str) -> String {
 
     // 1. status: minimum repository context envelope.
     let status = run_json(dir, &["status", "--json"]);
-    for key in ["schema", "repo", "state", "head", "complexity", "last_check", "subprojects", "origin"] {
+    for key in [
+        "schema",
+        "repo",
+        "state",
+        "head",
+        "complexity",
+        "last_check",
+        "subprojects",
+        "origin",
+    ] {
         assert!(status.get(key).is_some(), "status lacks {key}: {status}");
     }
     // 2. Minimum context via the resolved paths (never hardcoded).
-    let ps = status["paths"]["project_state"].as_str().expect("paths.project_state");
-    let pat = status["paths"]["patterns"].as_str().expect("paths.patterns");
+    let ps = status["paths"]["project_state"]
+        .as_str()
+        .expect("paths.project_state");
+    let pat = status["paths"]["patterns"]
+        .as_str()
+        .expect("paths.patterns");
     let state_text = std::fs::read_to_string(dir.join(ps)).expect("read project_state");
     let patterns_text = std::fs::read_to_string(dir.join(pat)).expect("read patterns");
-    assert!(!state_text.trim().is_empty(), "project state must be readable");
-    assert!(!patterns_text.trim().is_empty(), "patterns must be readable");
+    assert!(
+        !state_text.trim().is_empty(),
+        "project state must be readable"
+    );
+    assert!(
+        !patterns_text.trim().is_empty(),
+        "patterns must be readable"
+    );
 
     // 3. Targeted search, scoped through the scan-reported routing input.
     // The token is seeded into the scoped location so the assertion is
@@ -159,9 +178,17 @@ fn consumer_flow(dir: &Path, token: &str) -> String {
     assert_eq!(search["query"], token);
     let hit_text: String = search["hits"]
         .as_array()
-        .map(|h| h.iter().filter_map(|x| x.get("text")).map(|t| t.to_string()).collect())
+        .map(|h| {
+            h.iter()
+                .filter_map(|x| x.get("text"))
+                .map(|t| t.to_string())
+                .collect()
+        })
         .unwrap_or_default();
-    assert!(hit_text.contains(token), "search must find the token: {search}");
+    assert!(
+        hit_text.contains(token),
+        "search must find the token: {search}"
+    );
 
     // 4. Consistency check envelope (observed, not necessarily green).
     let check = run_json(dir, &["check", "--json"]);
@@ -189,9 +216,21 @@ fn uniform_flow_standalone_monolith() {
 #[test]
 fn uniform_flow_standalone_monorepo() {
     let dir = fresh_repo("monorepo");
-    write(&dir, "package.json", r#"{"name":"root","version":"0.1.0","workspaces":["apps/*"]}"#);
-    write(&dir, "apps/web/package.json", r#"{"name":"web","version":"0.1.0"}"#);
-    write(&dir, "apps/api/package.json", r#"{"name":"api","version":"0.1.0"}"#);
+    write(
+        &dir,
+        "package.json",
+        r#"{"name":"root","version":"0.1.0","workspaces":["apps/*"]}"#,
+    );
+    write(
+        &dir,
+        "apps/web/package.json",
+        r#"{"name":"web","version":"0.1.0"}"#,
+    );
+    write(
+        &dir,
+        "apps/api/package.json",
+        r#"{"name":"api","version":"0.1.0"}"#,
+    );
     commit_all(&dir, "fixture");
     assert_eq!(consumer_flow(&dir, "ctxtok-mr"), "standalone");
 }
@@ -210,7 +249,11 @@ fn uniform_flow_engineering_single_surface() {
 #[test]
 fn uniform_flow_engineering_unknown_recipe() {
     let dir = fresh_repo("engx");
-    write_engineering(&dir, "FUTURE-42", &[("quantum", "q-front"), ("neural", "q-back")]);
+    write_engineering(
+        &dir,
+        "FUTURE-42",
+        &[("quantum", "q-front"), ("neural", "q-back")],
+    );
     write(&dir, "package.json", r#"{"name":"demo","version":"0.1.0"}"#);
     commit_all(&dir, "fixture");
     assert_eq!(consumer_flow(&dir, "ctxtok-ex"), "engineering-platform");

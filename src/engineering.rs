@@ -141,7 +141,18 @@ fn non_empty_str(v: &serde_json::Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn parse_manifest(v: &serde_json::Value) -> Option<(String, String, Option<String>, String, Option<String>, String, i64, Vec<(String, String, String, String)>)> {
+fn parse_manifest(
+    v: &serde_json::Value,
+) -> Option<(
+    String,
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+    String,
+    i64,
+    Vec<(String, String, String, String)>,
+)> {
     let schema_version = schema_version_int(v)?;
     let project = non_empty_str(v, "project")?;
     let recipe = non_empty_str(v, "recipe")?;
@@ -267,7 +278,9 @@ pub fn detect(root: &Path) -> EngineeringDetection {
             return EngineeringDetection::Unsupported {
                 reason: format!("{PROJECT_JSON} is unreadable ({e})"),
                 manifest_version: None,
-                map_version: read_json(root, PROJECT_MAP_JSON).as_ref().and_then(version_to_string),
+                map_version: read_json(root, PROJECT_MAP_JSON)
+                    .as_ref()
+                    .and_then(version_to_string),
             };
         }
     };
@@ -311,8 +324,16 @@ pub fn detect(root: &Path) -> EngineeringDetection {
     let manifest_version = version_to_string(&manifest_value);
     let map_version = version_to_string(&map_value);
 
-    let Some((project, recipe, recipe_version, catalog_version, database_profile, plan_fingerprint, manifest_schema, components)) =
-        parse_manifest(&manifest_value)
+    let Some((
+        project,
+        recipe,
+        recipe_version,
+        catalog_version,
+        database_profile,
+        plan_fingerprint,
+        manifest_schema,
+        components,
+    )) = parse_manifest(&manifest_value)
     else {
         return EngineeringDetection::Unsupported {
             reason: format!(

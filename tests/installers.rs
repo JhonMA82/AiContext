@@ -62,10 +62,7 @@ fn install_script_uses_official_release_source() {
         body.contains("JhonMA82/AiContext"),
         "must point at the GitHub repo"
     );
-    assert!(
-        body.contains("releases"),
-        "must point at GitHub Releases"
-    );
+    assert!(body.contains("releases"), "must point at GitHub Releases");
     assert!(
         body.contains("-installer.sh"),
         "must reuse the official cargo-dist installer"
@@ -98,7 +95,10 @@ fn install_script_uses_official_release_source() {
 #[test]
 fn update_script_check_is_readonly_and_yes_guarded() {
     let body = read_script("update.sh");
-    assert!(body.contains("dirname"), "must share install.sh base-dir contract");
+    assert!(
+        body.contains("dirname"),
+        "must share install.sh base-dir contract"
+    );
     assert!(body.contains("--check"), "must support --check");
     assert!(body.contains("--yes"), "must support --yes");
     assert!(

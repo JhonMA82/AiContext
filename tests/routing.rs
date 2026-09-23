@@ -438,5 +438,8 @@ fn routing_row_addition_converges_in_one_sync() {
     let state = read(&dir, ".engineering/PROJECT_STATE.md");
     assert!(state.contains("apps/third"), "new row projected:\n{state}");
     let agents = read(&dir, "AGENTS.md");
-    assert!(agents.contains("apps/third"), "routing refreshed:\n{agents}");
+    assert!(
+        agents.contains("apps/third"),
+        "routing refreshed:\n{agents}"
+    );
 }

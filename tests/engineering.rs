@@ -136,7 +136,11 @@ fn write_engineering(dir: &Path, recipe: &str, surfaces: &[(&str, &str)]) {
         ".engineering/handoff.json",
         r#"{"schema_version":1,"status":"ready_for_implementation","next_owner":"gentle-ai","locked":["architecture"],"requirements":[],"open_questions":[]}"#,
     );
-    write(dir, "ARCHITECTURE.md", "# Architecture (Engineering-owned)\n");
+    write(
+        dir,
+        "ARCHITECTURE.md",
+        "# Architecture (Engineering-owned)\n",
+    );
     write(dir, "GENTLE.md", "# Gentle (Engineering-owned)\n");
     write(
         dir,
@@ -144,7 +148,11 @@ fn write_engineering(dir: &Path, recipe: &str, surfaces: &[(&str, &str)]) {
         "# demo — agent router\n\nEngineering-owned router content.\n",
     );
     for (_, dest) in surfaces {
-        write(dir, &format!("{dest}/package.json"), &sub_package_json(dest));
+        write(
+            dir,
+            &format!("{dest}/package.json"),
+            &sub_package_json(dest),
+        );
         std::fs::create_dir_all(dir.join(dest)).expect("mkdir dest");
     }
     write(dir, "package.json", root_package_json());
@@ -192,21 +200,26 @@ fn standalone_monolith_adoption() {
     let check = run_json(&dir, &["check", "--json"]);
     assert_eq!(check["passed"], true);
     assert_eq!(finding(&check, "engineering")["passed"], true);
-    assert!(
-        finding(&check, "engineering")["detail"]
-            .as_str()
-            .unwrap()
-            .contains("standalone")
-    );
+    assert!(finding(&check, "engineering")["detail"]
+        .as_str()
+        .unwrap()
+        .contains("standalone"));
     let state = std::fs::read_to_string(dir.join(".engineering/PROJECT_STATE.md")).unwrap();
-    assert!(!state.contains("Origin:"), "standalone state has no Origin lines");
+    assert!(
+        !state.contains("Origin:"),
+        "standalone state has no Origin lines"
+    );
 }
 
 // 2. Standalone monorepo adoption keeps working.
 #[test]
 fn standalone_monorepo_adoption() {
     let dir = fresh_repo("mono2");
-    write(&dir, "package.json", r#"{"name":"root","version":"0.1.0","workspaces":["apps/*"]}"#);
+    write(
+        &dir,
+        "package.json",
+        r#"{"name":"root","version":"0.1.0","workspaces":["apps/*"]}"#,
+    );
     write(&dir, "apps/web/package.json", &sub_package_json("web"));
     write(&dir, "apps/api/package.json", &sub_package_json("api"));
     commit_all(&dir, "fixture");
@@ -276,7 +289,12 @@ fn never_overwrites_engineering_artifacts() {
     .iter()
     .map(|f| (f.to_string(), std::fs::read_to_string(dir.join(f)).unwrap()))
     .collect();
-    for cmd in [["init", "--non-interactive"], ["sync", ""], ["check", ""], ["doctor", ""]] {
+    for cmd in [
+        ["init", "--non-interactive"],
+        ["sync", ""],
+        ["check", ""],
+        ["doctor", ""],
+    ] {
         let args: Vec<&str> = cmd.iter().filter(|s| !s.is_empty()).copied().collect();
         let _ = run(&dir, args.as_slice());
     }
@@ -301,8 +319,14 @@ fn agents_md_keeps_both_systems() {
         agents.contains("Engineering-owned router content."),
         "engineering bytes preserved"
     );
-    assert!(agents.contains("<!-- aicontext:routing:start -->"), "routing block added");
-    assert!(agents.contains("<!-- aicontext:context:start -->"), "context block added");
+    assert!(
+        agents.contains("<!-- aicontext:routing:start -->"),
+        "routing block added"
+    );
+    assert!(
+        agents.contains("<!-- aicontext:context:start -->"),
+        "context block added"
+    );
     // Sync only refreshes inside the markers.
     let (c2, _) = run(&dir, &["sync"]);
     assert_eq!(c2, 0);
@@ -339,19 +363,27 @@ fn evolution_drift_and_sync_convergence() {
     // manifest and provenance (topology unchanged).
     for f in [".engineering/project.json", ".engineering/provenance.json"] {
         let p = dir.join(f);
-        let text = std::fs::read_to_string(&p).unwrap().replace("abc123", "def456");
+        let text = std::fs::read_to_string(&p)
+            .unwrap()
+            .replace("abc123", "def456");
         std::fs::write(&p, text).unwrap();
     }
     // Drift is visible before sync.
     let (sync_check_code, _) = run(&dir, &["sync", "--check"]);
     assert_eq!(sync_check_code, 1, "generated block must be stale");
     let check = run_json(&dir, &["check", "--json"]);
-    assert_eq!(check["passed"], false, "stale state must fail check: {check}");
+    assert_eq!(
+        check["passed"], false,
+        "stale state must fail check: {check}"
+    );
     // Sync updates only deterministic facts and converges.
     let (sync_code, sout) = run(&dir, &["sync"]);
     assert_eq!(sync_code, 0, "sync must converge: {sout}");
     let check2 = run_json(&dir, &["check", "--json"]);
-    assert_eq!(check2["passed"], true, "deterministic change converges: {check2}");
+    assert_eq!(
+        check2["passed"], true,
+        "deterministic change converges: {check2}"
+    );
     let status = run_json(&dir, &["status", "--json"]);
     assert_eq!(status["state"], "synchronized");
 }
@@ -368,7 +400,11 @@ fn semantic_knowledge_survives_sync() {
     let state = std::fs::read_to_string(&state_path).unwrap();
     let with_curated = state.replace("TBD", "Curated semantic knowledge.");
     std::fs::write(&state_path, with_curated).unwrap();
-    write(&dir, ".engineering/PATTERNS.md", "# Patterns\n\n## Real pattern\n\nStatus: observed\n");
+    write(
+        &dir,
+        ".engineering/PATTERNS.md",
+        "# Patterns\n\n## Real pattern\n\nStatus: observed\n",
+    );
     let manifest = std::fs::read_to_string(dir.join(".engineering/subprojects.yml")).unwrap();
     let with_purpose = manifest.replace("purpose: \"\"", "purpose: \"does things\"");
     std::fs::write(dir.join(".engineering/subprojects.yml"), with_purpose).unwrap();
@@ -417,7 +453,8 @@ fn absence_keeps_standalone_behavior() {
     assert!(scan.get("engineering").is_none());
     let status = run_json(&dir, &["status", "--json"]);
     assert!(status.get("origin").is_none() || status["origin"] == "standalone");
-    let state = std::fs::read_to_string(dir.join(".engineering/PROJECT_STATE.md")).unwrap_or_default();
+    let state =
+        std::fs::read_to_string(dir.join(".engineering/PROJECT_STATE.md")).unwrap_or_default();
     let _ = state;
     let (c, _) = run(&dir, &["init", "--non-interactive"]);
     assert_eq!(c, 0);

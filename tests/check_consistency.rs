@@ -339,7 +339,9 @@ fn init_detects_cargo_version_source_at_root() {
     let (code, out) = run(&dir, ["check", "--json"]);
     assert_eq!(code, 0, "cargo-only root must pass check: {out}");
     assert_eq!(
-        finding(&out, "version").get("passed").and_then(|p| p.as_bool()),
+        finding(&out, "version")
+            .get("passed")
+            .and_then(|p| p.as_bool()),
         Some(true)
     );
 }

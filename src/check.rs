@@ -495,10 +495,9 @@ fn check_subprojects_routing(root: &Path) -> (bool, String) {
 ///   detection reason.
 fn check_engineering(root: &Path) -> (bool, String) {
     match crate::engineering::detect(root) {
-        crate::engineering::EngineeringDetection::Absent => (
-            true,
-            "no engineering metadata — standalone".to_string(),
-        ),
+        crate::engineering::EngineeringDetection::Absent => {
+            (true, "no engineering metadata — standalone".to_string())
+        }
         crate::engineering::EngineeringDetection::Unsupported {
             reason,
             manifest_version: _,
@@ -527,11 +526,14 @@ fn check_engineering(root: &Path) -> (bool, String) {
             }
             // 2. Map surfaces must match manifest destinations (same invariant
             // `eng doctor` enforces as project-map-drift, observed here).
-            if let Some(manifest_value) = std::fs::read_to_string(root.join(crate::engineering::PROJECT_JSON))
-                .ok()
-                .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            if let Some(manifest_value) =
+                std::fs::read_to_string(root.join(crate::engineering::PROJECT_JSON))
+                    .ok()
+                    .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
             {
-                if let Some(components) = manifest_value.get("components").and_then(|c| c.as_array()) {
+                if let Some(components) =
+                    manifest_value.get("components").and_then(|c| c.as_array())
+                {
                     let mut manifest_map: std::collections::BTreeMap<String, String> =
                         std::collections::BTreeMap::new();
                     for c in components {
@@ -555,9 +557,10 @@ fn check_engineering(root: &Path) -> (bool, String) {
                         ));
                     }
                     // 3. Provenance fingerprint must match the manifest when present.
-                    if let Some(prov_value) = std::fs::read_to_string(root.join(crate::engineering::PROVENANCE_JSON))
-                        .ok()
-                        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                    if let Some(prov_value) =
+                        std::fs::read_to_string(root.join(crate::engineering::PROVENANCE_JSON))
+                            .ok()
+                            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
                     {
                         let prov_fp = prov_value
                             .get("plan_fingerprint")
