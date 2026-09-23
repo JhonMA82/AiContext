@@ -33,8 +33,8 @@ Updates $APP remotely (idempotent).
   --help              Show this help.
 
 Remote usage:
-  curl -LsSf https://raw.githubusercontent.com/$REPO/v0.5.0/installers/update.sh | sh -s -- --check
-  curl -LsSf https://raw.githubusercontent.com/$REPO/v0.5.0/installers/update.sh | sh -s -- --yes
+  curl -LsSf https://raw.githubusercontent.com/$REPO/v0.6.0/installers/update.sh | sh -s -- --check
+  curl -LsSf https://raw.githubusercontent.com/$REPO/v0.6.0/installers/update.sh | sh -s -- --yes
 USAGE
 }
 

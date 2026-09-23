@@ -22,7 +22,7 @@ function Show-Usage {
   Write-Output "  -Version VERSION  Version to install (default: latest). Accepts 'latest', '0.4.0' or 'v0.4.0'."
   Write-Output "  -InstallDir DIR   Binary directory (default: `$env:USERPROFILE\.cargo\bin)."
   Write-Output "Remote usage:"
-  Write-Output "  irm https://raw.githubusercontent.com/$Repo/v0.5.0/installers/install.ps1 | iex"
+  Write-Output "  irm https://raw.githubusercontent.com/$Repo/v0.6.0/installers/install.ps1 | iex"
 }
 
 if ($Help) { Show-Usage; exit 0 }
