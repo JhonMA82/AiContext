@@ -4,6 +4,8 @@ Formato basado en Keep a Changelog. Versiones: SemVer.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-23
+
 ### Agregado
 
 - Soporte de agente `opencode` en `aicontext agent install|uninstall`: el

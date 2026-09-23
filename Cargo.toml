@@ -1,6 +1,6 @@
 [package]
 name = "aicontext"
-version = "0.6.1"
+version = "0.7.0"
 edition = "2021"
 description = "Deterministic repository intelligence CLI (P0 core)"
 license = "MIT"
